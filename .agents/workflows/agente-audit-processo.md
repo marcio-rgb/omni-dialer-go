@@ -23,7 +23,11 @@ Para definições canônicas de tipos, structs de domínio, DTOs de I/O, interfa
 
 ### 1.3. Interação com o Agente Especialista Asterisk
 Para regras de dialplan, triagem ultrarrápida de atendimento (< 1,5s), parâmetros de AMD nativo, reconhecimento de voz Vosk STT via EAGI e roteamento PJSIP, este workflow atua em conjunto com o:
-👉 [`.agents/workflows/agente-asterik-especialista.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterik-especialista.md)
+👉 [`.agents/workflows/agente-asterisk-especialista.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterisk-especialista.md)
+
+### 1.4. Interação com o Agente Tester Dialer
+Para matriz de testes de telefonia multiformato (`10`, `11`, `12`, `13`, `14` dígitos), garantia de Zero Normalização no discador e validação de trânsito SIP, este workflow atua em conjunto com o:
+👉 [`.agents/workflows/agente-tester-dialer.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-tester-dialer.md)
 
 ---
 
