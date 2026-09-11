@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  dialer-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dialer-go-core
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://dialer_user:dialer_pass@dialer-postgres:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=dialer-redis:6379
+      - REDIS_DB=0
+      - ASTERISK_AMI_HOST=127.0.0.1
+      - ASTERISK_AMI_PORT=5038
+      - ASTERISK_AMI_USER=dialer_admin
+      - ASTERISK_AMI_PASS=dialer_secret_ami
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16
+      - MAX_GLOBAL_CHANNELS=60
+      - HUMAN_RESERVED_QUOTA=10
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+    depends_on:
+      - dialer-postgres
+      - dialer-redis
+      - dialer-vosk
+    networks:
+      - dialer-net
+
+  dialer-postgres:
+    image: postgres:16-alpine
+    container_name: dialer-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=dialer_user
+      - POSTGRES_PASSWORD=dialer_pass
+      - POSTGRES_DB=dialer_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - dialer-pgdata:/var/lib/postgresql/data
+    networks:
+      - dialer-net
+
+  dialer-redis:
+    image: redis:7-alpine
+    container_name: dialer-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - dialer-redisdata:/data
+    networks:
+      - dialer-net
+
+  dialer-vosk:
+    image: alphacep/kaldi-vosk-server:latest
+    container_name: dialer-vosk
+    restart: unless-stopped
+    command: python3 /opt/vosk-server/websocket/asr_server.py /opt/vosk-model/model
+    ports:
+      - "2700:2700"
+    volumes:
+      - ./vosk-model:/opt/vosk-model/model
+    environment:
+      - VOSK_SAMPLE_RATE=8000
+    networks:
+      - dialer-net
+
+volumes:
+  dialer-pgdata:
+  dialer-redisdata:
+
+networks:
+  dialer-net:
+    driver: bridge

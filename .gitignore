@@ -1,0 +1,21 @@
+# Binaries
+dialer
+vosk-eagi
+dialer-go
+*.exe
+*.test
+
+# Heavy model files (stored externally or in storage)
+vosk-model/
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Environment
+.env
+.env.*
+!.env.example

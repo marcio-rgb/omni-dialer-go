@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  dialer-go:
+    image: ghcr.io/marcio-rgb/omni-dialer-go:latest
+    container_name: dialer_go_core
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-go
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=ojr6DNM25InIg3qoYI4nbUL5Cx04iCiC
+      - REDIS_DB=0
+      - ASTERISK_AMI_HOST=84.247.135.255
+      - ASTERISK_AMI_PORT=5038
+      - ASTERISK_AMI_USER=Omnichat
+      - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=creditobr
+      - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
+      - MINIO_BUCKET=mailings
+      - MINIO_USE_SSL=false
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,37.60.228.113,*
+      - MAX_GLOBAL_CHANNELS=60
+      - HUMAN_RESERVED_QUOTA=10
+      - UPDATE_TIMESTAMP=1789130483
+    ports:
+      - "8080:8080"
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=minha_rede"
+        - "traefik.http.routers.dialer-go.rule=Host(`api-omnichat.creditobr.org`) && PathPrefix(`/dialer-go`)"
+        - "traefik.http.routers.dialer-go.entrypoints=websecure"
+        - "traefik.http.routers.dialer-go.tls=true"
+        - "traefik.http.routers.dialer-go.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.dialer-go-stripprefix.stripprefix.prefixes=/dialer-go"
+        - "traefik.http.routers.dialer-go.middlewares=dialer-go-stripprefix"
+        - "traefik.http.services.dialer-go.loadbalancer.server.port=8080"
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+networks:
+  minha_rede:
+    external: true
+    name: minha_rede
