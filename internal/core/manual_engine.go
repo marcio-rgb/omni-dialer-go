@@ -161,6 +161,15 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		}
 	}
 
+	leadName := req.LeadName
+	if leadName == "" {
+		leadName = req.Name
+	}
+	leadCPF := req.LeadCPF
+	if leadCPF == "" {
+		leadCPF = req.CPF
+	}
+
 	vars := map[string]string{
 		"CALL_ID":    callID,
 		"TENANT_ID":  req.TenantID,
@@ -168,6 +177,8 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		"CALL_TYPE":  "MANUAL",
 		"SIP_ROUTE":  sipRoute,
 		"PHONE":      destPhone,
+		"LEAD_NAME":  leadName,
+		"LEAD_CPF":   leadCPF,
 		"TRUNK_ID":   trunkID,
 	}
 	if trunk != nil && trunk.UserAgent != nil && *trunk.UserAgent != "" {

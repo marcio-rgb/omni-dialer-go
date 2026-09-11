@@ -125,14 +125,15 @@ sequenceDiagram
 
 ### 3.1. Gatilho e Notificação Manual
 - **Método Notificador:** [`ManualHandler.DialManual`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/manual_handler.go#L19) (`POST /api/v1/calls/manual`)
-- **Contrato de Entrada (`ManualCallRequest`):** `tenant_id`, `agent_id`, `phone`, `sip_route`, `trunk_id` (opcional).
-- **Contrato de Saída (`ManualCallResponse`):** `call_id`, `status` ("dialing"), `trunk_used`.
+- **Contrato de Entrada (`ManualCallRequest`):** `tenant_id`, `agent_id`, `phone`, `sip_route`, `trunk_id` (opcional), `lead_name` (opcional), `lead_cpf` (opcional).
+- **Contrato de Saída (`ManualCallResponse`):** `call_id` (formato `manual-<uuid>`), `status` ("dialing"), `trunk_used`.
 - **Status de Trace:** Suportado via CorrelationID (`man-corr-<uuid>`); toggleable.
 
 ### 3.2. Execução da Chamada Manual
 - **Método Executor:** [`ManualEngine.DialManual`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go#L29)
 - **Preempção Operacional:** Aloca slot com `isHuman = true`, respeitando `humanReserveQuota`.
 - **Disparo no PBX:** [`ami.Originate`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L231) apontando para contexto `from-dialer-manual` conectando diretamente ao `sip_route` do operador.
+- **Topologia RTP:** A perna do tronco externo recebe o IP público do transporte PJSIP (`37.60.228.113`) e a perna da sala do operador conecta via overlay interna (`10.0.1.0/24`), garantindo áudio bidirecional sem timeout de mídia.
 
 ---
 

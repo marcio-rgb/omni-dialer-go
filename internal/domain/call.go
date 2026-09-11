@@ -71,13 +71,23 @@ type PhoneTrunkMapping struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// DTOs para Chamadas Manuais e Preditivas:
 type ManualCallRequest struct {
 	TenantID string `json:"tenant_id"`
 	AgentID  string `json:"agent_id"`
 	Phone    string `json:"phone"`
 	SIPRoute string `json:"sip_route"`
 	TrunkID  string `json:"trunk_id,omitempty"`
+	LeadName string `json:"lead_name,omitempty"`
+	LeadCPF  string `json:"lead_cpf,omitempty"`
+	Name     string `json:"name,omitempty"`
+	CPF      string `json:"cpf,omitempty"`
+}
+
+type LeadQueueItem struct {
+	Phone  string `json:"phone"`
+	CPF    string `json:"cpf,omitempty"`
+	Name   string `json:"name,omitempty"`
+	LeadID int64  `json:"lead_id,omitempty"`
 }
 
 type ManualCallResponse struct {

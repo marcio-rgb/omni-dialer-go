@@ -74,7 +74,7 @@ graph TD
 - `ActiveChannel`: Estado volátil de chamada em conversação ou discagem.
   - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `StartedAt`, `IsAnswered`.
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
-- `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada.
+- `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`).
 - `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas.
 
 ### 3.2. Campanhas e Saturação ([`campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go))
@@ -83,6 +83,7 @@ graph TD
 - `CampaignSaturationData`: Métricas de queima de mailing (`BurnRatePercentage`, `RefillUrgency`, `EstimatedExhaustionH`).
 
 ### 3.3. Leads e Refill ([`lead.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/lead.go))
+- `Lead`: Registro de contato (`ID`, `CampaignID`, `TenantID`, `CPF`, `Phone`, `Name`, `Status`, `AttemptsCount`).
 - `Lead`: Registro telefônico individual (`ID`, `CampaignID`, `TenantID`, `CPF`, `Phone`, `Status`, `AttemptsCount`, `LastDialedAt`).
 - `RefillRequest` / `RefillResponse`: Ingestão atômica de arquivos compactados ZIP com CSV canônico.
 

@@ -128,6 +128,25 @@ O script EAGI executa como processo filho do Asterisk com comunicação de ultra
    - `Cause 19` (No Answer): Não atende (chamando sem resposta).
    - `Cause 34` (Circuit Congestion): Tronco saturado ou operadora indisponível.
 
+### 6.1. Topologia de NAT e Passagem de Áudio RTP (Docker / Swarm)
+Para evitar quebra de passagem de áudio bidirecional e timeouts de mídia (`media-timeout`):
+1. **PJSIP Transports (`pjsip.conf`):** O `[transport-udp]` deve obrigatoriamente declarar as faixas de rede internas como `local_net` e o IP público nas diretivas externas:
+   ```ini
+   [transport-udp]
+   type=transport
+   protocol=udp
+   bind=0.0.0.0:5060
+   local_net=10.0.0.0/8
+   local_net=172.16.0.0/12
+   local_net=192.168.0.0/16
+   external_media_address=37.60.228.113
+   external_signaling_address=37.60.228.113
+   ```
+   - **Comunicação Interna (Conferência / LiveKit SIP):** Asterisk reconhece a rota na overlay `minha_rede` (`10.0.1.0/24`) e sinaliza o IP interno `10.0.1.x`, trafegando RTP direto sem hairpinning ou perda de pacotes.
+   - **Comunicação Externa (Troncos PSTN / RVX / SobreIP):** Asterisk insere o IP público `37.60.228.113` no SDP `c=IN IP4`, garantindo que a operadora saiba exatamente para onde enviar o fluxo de áudio da perna do cliente.
+2. **Configuração do Gateway de Conferência (`livekit-sip`):**
+   - No `SIP_CONFIG_BODY`, manter `use_external_ip: false` e definir `local_net: "10.0.1.0/24"`. Isso impede que o gateway anuncie o IP público para o Asterisk e force hairpinning via IPVS do Docker Swarm.
+
 ---
 
 ## 7. Diretrizes de Manutenção & Sugestões de Código

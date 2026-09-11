@@ -17,6 +17,7 @@ type Lead struct {
 	TenantID      string     `json:"tenant_id"`
 	CPF           string     `json:"cpf"`
 	Phone         string     `json:"phone"`
+	Name          string     `json:"name,omitempty"`
 	Status        LeadStatus `json:"status"`
 	AttemptsCount int        `json:"attempts_count"`
 	LastDialedAt  *time.Time `json:"last_dialed_at,omitempty"`

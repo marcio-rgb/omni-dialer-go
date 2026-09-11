@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -148,8 +149,17 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			break // Todos os troncos do pool atingiram rigorosamente o seu max_channels
 		}
 
-		phone, err := pe.cache.PopLead(ctx, req.CampaignID)
-		if (err != nil || phone == "") && pe.leads != nil {
+		rawLead, err := pe.cache.PopLead(ctx, req.CampaignID)
+		var leadItem domain.LeadQueueItem
+		if rawLead != "" {
+			if strings.HasPrefix(rawLead, "{") {
+				_ = json.Unmarshal([]byte(rawLead), &leadItem)
+			} else {
+				leadItem.Phone = rawLead
+			}
+		}
+
+		if leadItem.Phone == "" && pe.leads != nil {
 			// Reabastecimento autônomo da fila a partir do PostgreSQL (FILO)
 			dbLeads, fetchErr := pe.leads.FetchNextFILOBatch(ctx, req.CampaignID, 50, 2)
 			if fetchErr != nil || len(dbLeads) == 0 {
@@ -164,22 +174,30 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 				dbLeads, _ = pe.leads.FetchNextFILOBatch(ctx, req.CampaignID, 50, 0)
 			}
 			if len(dbLeads) > 0 {
-				var phoneBatch []string
+				var leadBatch []string
 				for _, l := range dbLeads {
-					phoneBatch = append(phoneBatch, l.Phone)
+					item := domain.LeadQueueItem{
+						Phone:  l.Phone,
+						CPF:    l.CPF,
+						Name:   l.Name,
+						LeadID: l.ID,
+					}
+					b, _ := json.Marshal(item)
+					leadBatch = append(leadBatch, string(b))
 					_ = pe.leads.MarkDialing(ctx, l.ID)
 				}
-				if len(phoneBatch) > 0 {
-					_ = pe.cache.PushLeads(ctx, req.CampaignID, phoneBatch[1:])
-					phone = phoneBatch[0]
+				if len(leadBatch) > 0 {
+					_ = pe.cache.PushLeads(ctx, req.CampaignID, leadBatch[1:])
+					_ = json.Unmarshal([]byte(leadBatch[0]), &leadItem)
 				}
 			}
 		}
+		phone := leadItem.Phone
 		if phone == "" {
 			log.Printf("[DEMAND] Phone is empty string - queue exhausted!")
 			break // Fila esgotada
 		}
-		log.Printf("[DEMAND] Selected trunk %s for phone %s", selectedTrunk.ID, phone)
+		log.Printf("[DEMAND] Selected trunk %s for phone %s (Name: %s, CPF: %s)", selectedTrunk.ID, phone, leadItem.Name, leadItem.CPF)
 
 		callID := fmt.Sprintf("pred-%s", uuid.New().String())
 		activeChan := &domain.ActiveChannel{
@@ -194,7 +212,8 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 		}
 
 		if err := pe.channels.AcquireSlot(ctx, activeChan, false); err != nil {
-			_ = pe.cache.PushLeads(ctx, req.CampaignID, []string{phone})
+			leadBytes, _ := json.Marshal(leadItem)
+			_ = pe.cache.PushLeads(ctx, req.CampaignID, []string{string(leadBytes)})
 			break
 		}
 
@@ -218,6 +237,11 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 		dialChannel := selectedTrunk.DialString(destPhone)
 		actionID := fmt.Sprintf("orig-%s", callID)
 
+		leadIDStr := fmt.Sprintf("%d", leadItem.LeadID)
+		if leadIDStr == "0" || leadIDStr == "" {
+			leadIDStr = phone
+		}
+
 		vars := map[string]string{
 			"CALL_ID":     callID,
 			"TENANT_ID":   req.TenantID,
@@ -225,7 +249,9 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			"CALL_TYPE":   "PREDICTIVE",
 			"TRUNK_ID":    selectedTrunk.ID,
 			"PHONE":       destPhone,
-			"LEAD_ID":     phone,
+			"LEAD_ID":     leadIDStr,
+			"LEAD_CPF":    leadItem.CPF,
+			"LEAD_NAME":   leadItem.Name,
 		}
 		if selectedTrunk.UserAgent != nil && *selectedTrunk.UserAgent != "" {
 			vars["TRUNK_USER_AGENT"] = *selectedTrunk.UserAgent

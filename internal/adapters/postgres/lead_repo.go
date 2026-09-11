@@ -32,14 +32,14 @@ func (r *LeadRepo) BatchInsert(ctx context.Context, leads []*domain.Lead) (int64
 	rows := make([][]interface{}, len(leads))
 	for i, l := range leads {
 		rows[i] = []interface{}{
-			l.CampaignID, l.TenantID, l.CPF, l.Phone, string(l.Status), l.AttemptsCount, time.Now(),
+			l.CampaignID, l.TenantID, l.CPF, l.Phone, string(l.Status), l.AttemptsCount, time.Now(), l.Name,
 		}
 	}
 
 	copyCount, err := r.pool.CopyFrom(
 		ctx,
 		pgx.Identifier{"leads"},
-		[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at"},
+		[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at", "name"},
 		pgx.CopyFromRows(rows),
 	)
 	return copyCount, err
@@ -53,7 +53,7 @@ func (r *LeadRepo) FetchNextFILOBatch(ctx context.Context, campaignID string, li
 	cooldownThreshold := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)
 
 	query := `
-		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at
+		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at, COALESCE(name, '') as name
 		FROM leads
 		WHERE campaign_id = $1
 		  AND status IN ('NEW', 'QUEUED')
@@ -74,7 +74,7 @@ func (r *LeadRepo) FetchNextFILOBatch(ctx context.Context, campaignID string, li
 		var statusStr string
 		err := rows.Scan(
 			&l.ID, &l.CampaignID, &l.TenantID, &l.CPF, &l.Phone, &statusStr, &l.AttemptsCount,
-			&l.LastDialedAt, &l.DialedAt, &l.CreatedAt,
+			&l.LastDialedAt, &l.DialedAt, &l.CreatedAt, &l.Name,
 		)
 		if err != nil {
 			return nil, err
