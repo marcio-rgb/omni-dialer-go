@@ -1,7 +1,7 @@
 # Binaries
-dialer
-vosk-eagi
-dialer-go
+/dialer
+/vosk-eagi
+/dialer-go
 *.exe
 *.test
 

@@ -1,5 +1,6 @@
 vosk-model/
-vosk-eagi
-dialer
+/vosk-eagi
+/dialer
+/dialer-go
 .git/
 .agents/
