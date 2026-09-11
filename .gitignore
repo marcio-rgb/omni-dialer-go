@@ -19,3 +19,4 @@ vosk-model/
 .env
 .env.*
 !.env.example
+bin/

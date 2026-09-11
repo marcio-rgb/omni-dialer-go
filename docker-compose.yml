@@ -11,13 +11,13 @@ services:
     environment:
       - PORT=8080
       - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
-      - REDIS_ADDR=redis:6379
-      - REDIS_PASSWORD=ojr6DNM25InIg3qoYI4nbUL5Cx04iCiC
+      - REDIS_ADDR=dialer-redis:6379
       - REDIS_DB=0
-      - ASTERISK_AMI_HOST=84.247.135.255
+      - ASTERISK_AMI_HOST=asterisk
       - ASTERISK_AMI_PORT=5038
       - ASTERISK_AMI_USER=Omnichat
       - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=creditobr
       - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
@@ -26,7 +26,7 @@ services:
       - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,37.60.228.113,*
       - MAX_GLOBAL_CHANNELS=60
       - HUMAN_RESERVED_QUOTA=10
-      - UPDATE_TIMESTAMP=1789130483
+      - UPDATE_TIMESTAMP=1789130490
     ports:
       - "8080:8080"
     deploy:
@@ -45,6 +45,71 @@ services:
           - node.role == manager
       restart_policy:
         condition: on-failure
+
+  asterisk:
+    image: andrius/asterisk:20
+    networks:
+      minha_rede:
+        aliases:
+          - asterisk
+          - omni-asterisk
+    ports:
+      - target: 5038
+        published: 5038
+        protocol: tcp
+        mode: host
+      - "10100-10150:10100-10150/udp"
+    volumes:
+      - /opt/ominichat/asterisk/conf:/etc/asterisk
+      - /opt/ominichat/asterisk/sounds:/var/lib/asterisk/sounds
+      - /opt/ominichat/asterisk/agi-bin:/var/lib/asterisk/agi-bin
+      - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor
+    environment:
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  dialer-redis:
+    image: redis:7-alpine
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-redis
+    volumes:
+      - dialer_redis_data:/data
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  dialer-vosk:
+    image: alphacep/kaldi-vosk-server:latest
+    command: python3 /opt/vosk-server/websocket/asr_server.py /opt/vosk-model/model
+    ports:
+      - "2700:2700"
+    volumes:
+      - /opt/ominichat/vosk/model:/opt/vosk-model/model
+    environment:
+      - VOSK_SAMPLE_RATE=8000
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-vosk
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  dialer_redis_data:
 
 networks:
   minha_rede:
