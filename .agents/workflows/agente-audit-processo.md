@@ -254,6 +254,8 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
 
 | Módulo / Camada | Método / Função | Contrato de Entrada (Parâmetros / DTO) | Contrato de Saída (Retorno / Erro) | Trace (Toggle) | Gravação de CDR |
 | :--- | :--- | :--- | :--- | :---: | :---: |
+| **Health HTTP** | `HealthCheck` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `HealthResponse`) | Não | Não |
+| **HTTP Middleware** | `IPWhitelistMiddleware` | `(next http.Handler) http.Handler` | `http.Handler` (Validação CIDR / IP / Wildcard) | Não | Não |
 | **Predictive HTTP** | `Demand` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `PredictiveDemandResponse`) | Sim (Toggle) | Não |
 | **Predictive Core** | `ProcessDemand` | `(ctx context.Context, req *domain.PredictiveDemandRequest)` | `(*domain.PredictiveDemandResponse, error)` | Sim (Toggle) | Não |
 | **Predictive Core** | `randomizeCallerID` | `(destPhone string)` | `string` | Não | Não |

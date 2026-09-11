@@ -42,7 +42,7 @@ function getGitHubConfig() {
     }
 
     return {
-        token: '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',
+        token: process.env.GITHUB_TOKEN || '',
         owner: 'marcio-rgb',
         repo: 'omni-dialer-go'
     };

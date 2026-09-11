@@ -140,6 +140,18 @@ graph TD
 | `CampaignRepository` | `ListActive` | `ListActive(ctx context.Context, tenantID string) ([]*domain.Campaign, error)` |
 | `CampaignRepository` | `SetStatus` | `SetStatus(ctx context.Context, tenantID, campaignID string, status domain.CampaignStatus) (*domain.Campaign, error)` |
 
+### 4.4. `ports.StoragePort` ([`storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go))
+| Interface | Método | Assinatura | Finalidade |
+| :--- | :--- | :--- | :--- |
+| `StoragePort` | `DownloadFileStream` | `DownloadFileStream(ctx context.Context, fileURI string) (io.ReadCloser, error)` | Streaming direto de arquivos ZIP/CSV do MinIO S3 ou sistema local. |
+
+### 4.5. `http.IPWhitelistMiddleware` ([`ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go))
+- **Segurança de Rede & Resiliência de Borda:**
+  - Suporta IPs literais e máscaras CIDR (`net.ParseCIDR` com busca em `[]*net.IPNet` thread-safe via `sync.RWMutex`).
+  - Suporta wildcard `*` para redes dinâmicas ou testes.
+  - Bypass explícito de validação para `/health` e `/metrics`.
+  - Extrai IP real via `X-Forwarded-For` de proxies reversos confiáveis (Traefik).
+
 ---
 
 ## 5. Engenharia dos Motores Centrais (`internal/core/`)
