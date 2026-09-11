@@ -205,8 +205,11 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			}
 			return -1
 		}, destPhone)
+		// Normalização telefônica: Garante DDI 55 para números brasileiros (10 ou 11 dígitos) e preserva se já informado (12 ou 13 dígitos)
 		if strings.HasPrefix(digitsOnly, "55") && (len(digitsOnly) == 12 || len(digitsOnly) == 13) {
-			destPhone = digitsOnly[2:]
+			destPhone = digitsOnly
+		} else if len(digitsOnly) == 10 || len(digitsOnly) == 11 {
+			destPhone = "55" + digitsOnly
 		} else if len(digitsOnly) > 0 {
 			destPhone = digitsOnly
 		}

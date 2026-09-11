@@ -71,7 +71,7 @@ sequenceDiagram
 | `[from-dialer-amd]` | Ponto de entrada preditivo | Salto sem delay (`Goto(triagem-amd,s,1)`) para o motor de análise. |
 | `[triagem-amd]` | Pipeline de AMD Híbrido | Atendimento imediato, `MixMonitor` com path anualizado (`%Y/%m/%d`), AMD nativo + EAGI Vosk. |
 | `[from-dialer-manual]` | Entrega de discagem manual | Roteia perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
-| `[cos-all]` | Conferência e Tronco LiveKit | Extensão `9999` conecta chamada à sala `AGENT_ROOM` no LiveKit SIP (`192.168.0.13:5060`). |
+| `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Extensão `9999` conecta chamada à sala `AGENT_ROOM` retornando dinamicamente ao IP de origem (`${CHANNEL(pjsip,remote_addr)}`), sem IPs fixos, ou com fallback para o endpoint `livekit-sip`. |
 
 ### 3.2. Regra de Ouro do Atendimento Humano
 > [!IMPORTANT]

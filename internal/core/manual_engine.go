@@ -110,8 +110,11 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		}
 		return -1
 	}, destPhone)
+	// Normalização telefônica: Garante DDI 55 para números brasileiros (10 ou 11 dígitos) e preserva se já informado (12 ou 13 dígitos)
 	if strings.HasPrefix(digitsOnly, "55") && (len(digitsOnly) == 12 || len(digitsOnly) == 13) {
-		destPhone = digitsOnly[2:]
+		destPhone = digitsOnly
+	} else if len(digitsOnly) == 10 || len(digitsOnly) == 11 {
+		destPhone = "55" + digitsOnly
 	} else if len(digitsOnly) > 0 {
 		destPhone = digitsOnly
 	}
@@ -148,7 +151,13 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 	if !strings.HasPrefix(sipRoute, "PJSIP/") {
 		lkTrunk, err := me.trunks.GetByID(ctx, req.TenantID, "livekit-sip")
 		if err == nil && lkTrunk != nil && lkTrunk.IsEnabled {
-			sipRoute = fmt.Sprintf("PJSIP/%s/sip:%s@%s:%d", lkTrunk.ID, req.SIPRoute, lkTrunk.Host, lkTrunk.Port)
+			if lkTrunk.Host != "" {
+				sipRoute = fmt.Sprintf("PJSIP/%s/sip:%s@%s:%d", lkTrunk.ID, req.SIPRoute, lkTrunk.Host, lkTrunk.Port)
+			} else {
+				sipRoute = fmt.Sprintf("PJSIP/%s@%s", req.SIPRoute, lkTrunk.ID)
+			}
+		} else {
+			sipRoute = fmt.Sprintf("PJSIP/%s@livekit-sip", req.SIPRoute)
 		}
 	}
 
