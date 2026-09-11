@@ -224,12 +224,7 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			}
 			return -1
 		}, destPhone)
-		// Normalização telefônica: Garante DDI 55 para números brasileiros (10 ou 11 dígitos) e preserva se já informado (12 ou 13 dígitos)
-		if strings.HasPrefix(digitsOnly, "55") && (len(digitsOnly) == 12 || len(digitsOnly) == 13) {
-			destPhone = digitsOnly
-		} else if len(digitsOnly) == 10 || len(digitsOnly) == 11 {
-			destPhone = "55" + digitsOnly
-		} else if len(digitsOnly) > 0 {
+		if len(digitsOnly) > 0 {
 			destPhone = digitsOnly
 		}
 
@@ -243,15 +238,24 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 		}
 
 		vars := map[string]string{
-			"CALL_ID":     callID,
-			"TENANT_ID":   req.TenantID,
-			"CAMPAIGN_ID": req.CampaignID,
-			"CALL_TYPE":   "PREDICTIVE",
-			"TRUNK_ID":    selectedTrunk.ID,
-			"PHONE":       destPhone,
-			"LEAD_ID":     leadIDStr,
-			"LEAD_CPF":    leadItem.CPF,
-			"LEAD_NAME":   leadItem.Name,
+			"CALL_ID":       callID,
+			"__CALL_ID":     callID,
+			"TENANT_ID":     req.TenantID,
+			"__TENANT_ID":   req.TenantID,
+			"CAMPAIGN_ID":   req.CampaignID,
+			"__CAMPAIGN_ID": req.CampaignID,
+			"CALL_TYPE":     "PREDICTIVE",
+			"__CALL_TYPE":   "PREDICTIVE",
+			"TRUNK_ID":      selectedTrunk.ID,
+			"__TRUNK_ID":    selectedTrunk.ID,
+			"PHONE":         destPhone,
+			"__PHONE":       destPhone,
+			"LEAD_ID":       leadIDStr,
+			"__LEAD_ID":     leadIDStr,
+			"LEAD_CPF":      leadItem.CPF,
+			"__LEAD_CPF":    leadItem.CPF,
+			"LEAD_NAME":     leadItem.Name,
+			"__LEAD_NAME":   leadItem.Name,
 		}
 		if selectedTrunk.UserAgent != nil && *selectedTrunk.UserAgent != "" {
 			vars["TRUNK_USER_AGENT"] = *selectedTrunk.UserAgent

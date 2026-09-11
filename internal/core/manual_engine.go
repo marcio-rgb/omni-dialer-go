@@ -110,12 +110,7 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		}
 		return -1
 	}, destPhone)
-	// Normalização telefônica: Garante DDI 55 para números brasileiros (10 ou 11 dígitos) e preserva se já informado (12 ou 13 dígitos)
-	if strings.HasPrefix(digitsOnly, "55") && (len(digitsOnly) == 12 || len(digitsOnly) == 13) {
-		destPhone = digitsOnly
-	} else if len(digitsOnly) == 10 || len(digitsOnly) == 11 {
-		destPhone = "55" + digitsOnly
-	} else if len(digitsOnly) > 0 {
+	if len(digitsOnly) > 0 {
 		destPhone = digitsOnly
 	}
 
@@ -171,15 +166,24 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 	}
 
 	vars := map[string]string{
-		"CALL_ID":    callID,
-		"TENANT_ID":  req.TenantID,
-		"AGENT_ID":   req.AgentID,
-		"CALL_TYPE":  "MANUAL",
-		"SIP_ROUTE":  sipRoute,
-		"PHONE":      destPhone,
-		"LEAD_NAME":  leadName,
-		"LEAD_CPF":   leadCPF,
-		"TRUNK_ID":   trunkID,
+		"CALL_ID":      callID,
+		"__CALL_ID":    callID,
+		"TENANT_ID":    req.TenantID,
+		"__TENANT_ID":  req.TenantID,
+		"AGENT_ID":     req.AgentID,
+		"__AGENT_ID":   req.AgentID,
+		"CALL_TYPE":    "MANUAL",
+		"__CALL_TYPE":  "MANUAL",
+		"SIP_ROUTE":    sipRoute,
+		"__SIP_ROUTE":  sipRoute,
+		"PHONE":        destPhone,
+		"__PHONE":      destPhone,
+		"LEAD_NAME":    leadName,
+		"__LEAD_NAME":  leadName,
+		"LEAD_CPF":     leadCPF,
+		"__LEAD_CPF":   leadCPF,
+		"TRUNK_ID":     trunkID,
+		"__TRUNK_ID":   trunkID,
 	}
 	if trunk != nil && trunk.UserAgent != nil && *trunk.UserAgent != "" {
 		vars["TRUNK_USER_AGENT"] = *trunk.UserAgent
