@@ -15,7 +15,7 @@ $$\text{ChannelsToDial} = \max\left(1, \text{round}\left(\frac{\text{AvailableAg
 
 Onde:
 * $\text{AvailableAgents}$: Quantidade de operadores com status livre/ocioso (`idle`) associados à campanha no Redis.
-* $\text{Aggressiveness}$: Fator multiplicador configurado na campanha (padrão: `1.20`, variando de `1.00` a `2.50`).
+* $\text{Aggressiveness}$: Fator multiplicador configurado na campanha ou enviado dinamicamente no payload `PredictiveDemandRequest` (`aggressiveness`) (padrão: `1.20`, variando de `1.00` a `2.50`).
 * $\text{ContactProbability}$: Taxa histórica móvel de sucesso de atendimento humano (padrão conservador de boot: `0.30` ou 30%).
 * $\text{ChannelsToDial}$: Quantidade de chamadas simultâneas que o discador tentará originar no Asterisk.
 

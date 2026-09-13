@@ -79,7 +79,7 @@ graph TD
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
 - `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`, `WebhookURL`).
 - `CallEndedWebhookPayload`: DTO canônico de notificação assíncrona de término/falha de chamada para o OmniChat (`Event`, `CallID`, `CallType`, `TenantID`, `AgentID`, `Phone`, `TrunkUsed`, `Disposition`, `HangupCause`, `HangupReason`, `IsAnswered`, `DurationSeconds`, `BillsecSeconds`, `RingSeconds`, `StartedAt`, `EndedAt`, `Timestamp`).
-- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas.
+- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas (inclui `TenantID`, `CampaignID`, `Aggressiveness` opcional para override dinâmico, `AvailableAgents`).
 
 ### 3.2. Campanhas e Saturação ([`campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go))
 - `Campaign`: Configuração operacional da campanha (`ID`, `TenantID`, `Mode`, `Status`, `Aggressiveness`, `TrunkName`, `CycleCount`, `SaturationLevel`).

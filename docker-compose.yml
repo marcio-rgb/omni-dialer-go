@@ -27,7 +27,7 @@ services:
       - MAX_GLOBAL_CHANNELS=60
       - HUMAN_RESERVED_QUOTA=10
       - OMNICHAT_WEBHOOK_URL=http://server:3000/api/telephony/webhook/call-ended
-      - UPDATE_TIMESTAMP=1789293303
+      - UPDATE_TIMESTAMP=1789296740
     ports:
       - "8080:8080"
     deploy:

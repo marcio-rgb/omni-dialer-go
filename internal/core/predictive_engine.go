@@ -131,6 +131,9 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 	if campaign != nil && campaign.Aggressiveness > 0 {
 		aggressiveness = campaign.Aggressiveness
 	}
+	if req.Aggressiveness != nil && *req.Aggressiveness > 0 {
+		aggressiveness = *req.Aggressiveness
+	}
 
 	// Fórmula canônica de overdialing:
 	rawChannels := (float64(numAgents) / contactProbability) * (1.0 + (ringTime / talkTime)) * aggressiveness

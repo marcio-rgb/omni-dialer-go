@@ -97,7 +97,7 @@ sequenceDiagram
 
 ### 2.1. Gatilho e Notificação Inicial
 - **Método Notificador:** [`PredictiveHandler.Demand`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/predictive_handler.go#L19) (`POST /api/v1/predictive/demand`)
-- **Contrato de Entrada (`PredictiveDemandRequest`):** `tenant_id` (string), `campaign_id` (string), `available_agents` (`[]AgentDemandDTO`).
+- **Contrato de Entrada (`PredictiveDemandRequest`):** `tenant_id` (string), `campaign_id` (string), `aggressiveness` (*float64, opcional), `available_agents` (`[]AgentDemandDTO`).
 - **Contrato de Saída (`PredictiveDemandResponse`):** `campaign_id` (string), `dialing_channels` (int), `status` (string).
 - **Status de Trace:** Suportado via CorrelationID (`pred-corr-<uuid>`); toggleable.
 - **Gravação de CDR:** Não.

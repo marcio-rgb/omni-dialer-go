@@ -205,3 +205,70 @@ func TestPredictiveEngine_ProcessDemand_ZeroNormalization(t *testing.T) {
 		t.Errorf("__PHONE var incorreta: esperado '%s', obtido '%s'", expectedPhone, ami.lastVars["__PHONE"])
 	}
 }
+
+func TestPredictiveEngine_DynamicAggressiveness(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+
+	trunk := &domain.Trunk{
+		ID:          "trunk-vivo",
+		TenantID:    "tenant-test",
+		Name:        "Vivo SIP",
+		Direction:   domain.DirectionOutbound,
+		MaxChannels: 50,
+		IsEnabled:   true,
+	}
+	trunks := &mockTrunkRepo{trunk: trunk}
+
+	// Campanha no banco com agressividade padrão 1.0
+	campaign := &domain.Campaign{
+		ID:             "camp-dyn",
+		TenantID:       "tenant-test",
+		Mode:           domain.CampaignModePredictive,
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	// 10 leads na fila
+	var leadBatch []string
+	for i := 1; i <= 10; i++ {
+		lead, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(lead))
+	}
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Com 1 agente e agressividade dinâmica de 2.0:
+	// rawChannels = (1 / 0.28) * (1 + 18/180) * 2.0 = 3.5714 * 1.1 * 2.0 = 7.857 -> ceil = 8
+	dynAgg := 2.0
+	req := &domain.PredictiveDemandRequest{
+		TenantID:       "tenant-test",
+		CampaignID:     "camp-dyn",
+		Aggressiveness: &dynAgg,
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand falhou: %v", err)
+	}
+
+	if resp.DialingChannels != 8 {
+		t.Fatalf("esperava 8 canais disparados com aggressiveness 2.0, obteve %d", resp.DialingChannels)
+	}
+}
+

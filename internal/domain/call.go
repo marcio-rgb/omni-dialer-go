@@ -129,6 +129,7 @@ type AgentDemandDTO struct {
 type PredictiveDemandRequest struct {
 	TenantID        string           `json:"tenant_id"`
 	CampaignID      string           `json:"campaign_id"`
+	Aggressiveness  *float64         `json:"aggressiveness,omitempty"`
 	AvailableAgents []AgentDemandDTO `json:"available_agents"`
 }
 
