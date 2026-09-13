@@ -22,6 +22,20 @@ func NewToggleHandler(campaigns ports.CampaignRepository, cache ports.CachePort)
 	}
 }
 
+// Toggle ativa ou pausa o fluxo operacional de discagem de uma campanha.
+//
+// @pattern Adapter (HTTP Handler / State Toggle)
+// @governedBy docs/rules/CAMPAIGN_SATURATION.md
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de campos obrigatórios (`tenant_id`, `campaign_id`, `enable`)
+// - Verificação de existência da campanha em `campaigns.FindByID`
+//
+// @postExecution
+// - Persistência do novo status no PostgreSQL (`campaigns.UpdateStatus`)
+// - Atualização de flag de pausa no cache Redis (`cache.SetCampaignPaused`)
+// - Retorno de confirmação de status com status HTTP 200 OK
 func (h *ToggleHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	// Timeout estrito de 15 segundos
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

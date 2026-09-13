@@ -70,7 +70,7 @@ sequenceDiagram
 | `[outbound-vivo]` | Rota externa direta | Utiliza prefixo `b(pre-dial-vivo^s^1)` no comando `Dial`. |
 | `[from-dialer-amd]` | Ponto de entrada preditivo | Salto sem delay (`Goto(triagem-amd,s,1)`) para o motor de análise. |
 | `[triagem-amd]` | Pipeline de AMD Híbrido | Atendimento imediato, `MixMonitor` com path anualizado (`%Y/%m/%d`), AMD nativo + EAGI Vosk. |
-| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta `PJSIP_HEADER(add,X-Lead-Phone)=${PHONE}`, `CALLERID(num)=${PHONE}`, `CALLERID(name)=${LEAD_NAME}`, `X-Lead-CPF` e `X-Campaign-Id`. |
+| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-CPF` e `X-Campaign-Id`. |
 | `[from-dialer-manual]` | Entrega de discagem manual | Roteia perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
 | `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Extensão `9999` conecta chamada à sala `AGENT_ROOM` retornando dinamicamente ao IP de origem (`${CHANNEL(pjsip,remote_addr)}`), sem IPs fixos, ou com fallback para o endpoint `livekit-sip`. |
 

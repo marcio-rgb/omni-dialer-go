@@ -16,6 +16,20 @@ func NewPredictiveHandler(engine *core.PredictiveEngine) *PredictiveHandler {
 	return &PredictiveHandler{engine: engine}
 }
 
+// Demand processa uma rodada de demanda de discagem preditiva calculando pacing e overdialing.
+//
+// @pattern Strategy (Context / Predictive)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#1-algoritmo-de-pacing-e-equações-de-overdialing
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de DTO obrigatório (`tenant_id`, `campaign_id`)
+// - Verificação de pausa e agentes disponíveis em cache Redis
+//
+// @postExecution
+// - Reserva atômica de leads via stored procedure `fn_audit_claim_predictive_batch`
+// - Disparo de comandos `Originate` via socket AMI do Asterisk
+// - Retorno de status operacional e canais alocados
 func (h *PredictiveHandler) Demand(w http.ResponseWriter, r *http.Request) {
 	var req domain.PredictiveDemandRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -24,7 +24,20 @@ func NewReportHandler(repo ports.ReportRepository, cache ports.CachePort) *Repor
 	}
 }
 
-// GetCallsSummary manipula requisições GET /api/v1/reports/calls-summary com buffer estrito de 15 minutos
+// GetCallsSummary manipula requisições de métricas de chamadas com buffer de cache estrito de 15 minutos.
+//
+// @pattern Adapter (HTTP Handler / Cached Reporting)
+// @governedBy docs/rules/CAMPAIGN_SATURATION.md#4-política-de-cache-de-15-minutos-para-métricas-operacionais
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de `tenant_id` e janela temporal ISO 8601 (`start_date`, `end_date`)
+// - Verificação de cache no Redis por chave SHA-256 com TTL de 900 segundos
+//
+// @postExecution
+// - Agregação em passada única na tabela `cdrs` no PostgreSQL
+// - Gravação do resultado no cache Redis por 15 minutos
+// - Resposta em formato RFC 7807 em caso de erro ou payload consolidado
 func (h *ReportHandler) GetCallsSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

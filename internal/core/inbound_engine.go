@@ -28,6 +28,17 @@ func NewInboundEngine(ami ports.AMIPort, routing ports.RoutingRepository, channe
 }
 
 // ProcessInboundCall recebe o evento UserEvent(InboundCall) e resolve o roteamento O(1).
+//
+// @pattern Strategy (Inbound Engine)
+// @governedBy docs/rules/INBOUND_ROUTING.md#3-algoritmo-de-decisão-de-roteamento-receptivo
+//
+// @preExecution
+// - Recebimento de evento assíncrono `UserEvent(InboundCall)` via socket AMI
+// - Extração de número chamador (`callerPhone`) e DID
+//
+// @postExecution
+// - Lookup indexado O(1) na tabela `phone_trunk_mappings`
+// - Despacho de comando AMI `Redirect` para rota SIP de retorno ou contexto padrão
 func (ie *InboundEngine) ProcessInboundCall(ctx context.Context, channel, callerPhone, didNumber string) error {
 	actionID := fmt.Sprintf("inbound-%d", time.Now().UnixNano())
 
@@ -55,7 +66,16 @@ func (ie *InboundEngine) ProcessInboundCall(ctx context.Context, channel, caller
 	return ie.ami.Redirect(ctx, actionID, channel, "", ie.defaultContext, ie.defaultExten, 1)
 }
 
-// RecordOutboundDestination grava o mapeamento de retorno O(1) pós-atendimento
+// RecordOutboundDestination grava o mapeamento de retorno O(1) pós-atendimento.
+//
+// @pattern Repository (Routing Client)
+// @governedBy docs/rules/INBOUND_ROUTING.md#2-topologia-de-dados--tabela-rápida-phone_trunk_mappings
+//
+// @preExecution
+// - Confirmação de atendimento humano de chamada sainte
+//
+// @postExecution
+// - Upsert atômico na tabela `phone_trunk_mappings`
 func (ie *InboundEngine) RecordOutboundDestination(ctx context.Context, phone, trunkID, project, sipRoute, tenantID string) error {
 	mapping := &domain.PhoneTrunkMapping{
 		Phone:        phone,

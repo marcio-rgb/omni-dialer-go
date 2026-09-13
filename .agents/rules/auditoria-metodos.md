@@ -21,7 +21,7 @@ Qualquer modificação no código-fonte do projeto — incluindo, mas não se li
 Sempre que o gatilho acima ocorrer, é **obrigatório atualizar imediatamente na mesma intervenção** os documentos canônicos:
 1. 👉 [`.agents/workflows/agente-go-especialista.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-go-especialista.md):
    - Assinaturas exatas de métodos, interfaces de portas, structs de domínio, DTOs e tipagem estrita Go 1.25.
-2. 👉 [`.agents/workflows/agente-asterik-especialista.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterik-especialista.md):
+2. 👉 [`.agents/workflows/agente-asterisk-especialista.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterisk-especialista.md):
    - Contextos do dialplan, parâmetros de AMD, scripts EAGI, modelos Vosk STT, roteamento PJSIP e headers SIP.
 3. 👉 [`.agents/workflows/agente-audit-processo.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-audit-processo.md):
    - Ciclo de vida, gatilhos de início/repouso/término, trace dinâmico, gravação de CDR e matriz de rastreabilidade.

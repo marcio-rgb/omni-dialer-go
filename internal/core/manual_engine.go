@@ -30,6 +30,19 @@ func NewManualEngine(ami ports.AMIPort, channels *ChannelManager, trunks ports.T
 }
 
 // DialManual dispara chamada manual prioritária.
+//
+// @pattern Strategy (Manual Engine)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#2-quota-garantida-de-canais-para-operadores-humanos-humanreservequota
+//
+// @preExecution
+// - Seleção de tronco com saúde confirmada e capacidade livre
+// - Alocação prioritária na cota humana reservada (`HumanReserveQuota`) em `ChannelManager`
+// - Formatação da string de discagem PJSIP com `tech_prefix`
+//
+// @postExecution
+// - Disparo de comando `Originate` com contexto `from-dialer-manual`
+// - Gravação de áudio via `MixMonitor`
+// - Retorno de `ManualCallResponse` com identificadores únicos
 func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRequest) (*domain.ManualCallResponse, error) {
 	// 1. Identifica tronco disponível para a chamada manual
 	trunkID := req.TrunkID

@@ -38,6 +38,19 @@ func NewPredictiveEngine(ami ports.AMIPort, channels *ChannelManager, cache port
 }
 
 // ProcessDemand processa a requisição síncrona POST /api/v1/predictive/demand e calcula os disparos.
+//
+// @pattern Strategy (Predictive Engine)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#1-algoritmo-de-pacing-e-equações-de-overdialing
+//
+// @preExecution
+// - Checagem de pausa da campanha em cache Redis (`IsCampaignPaused`)
+// - Filtragem do pool de troncos PJSIP elegíveis e saudáveis
+// - Cálculo de overdialing dinâmico baseado em agentes livres e agressividade
+//
+// @postExecution
+// - Alocação atômica de slots no `ChannelManager` respeitando `HumanReserveQuota`
+// - Consumo de leads da fila/banco via `leadRepo.PopLead`
+// - Disparo de requisições `Originate` via socket AMI do Asterisk
 func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.PredictiveDemandRequest) (*domain.PredictiveDemandResponse, error) {
 	// 1. Verifica se a campanha está pausada via flag rápida Redis
 	paused, _ := pe.cache.IsCampaignPaused(ctx, req.CampaignID)

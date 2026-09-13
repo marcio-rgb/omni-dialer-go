@@ -59,6 +59,17 @@ func (cm *ChannelManager) UnregisterTrunk(trunkID string) {
 }
 
 // CanAcquireSlot avalia se a chamada pode ser originada respeitando a hierarquia de dois níveis.
+//
+// @pattern Semaphore (Lock-Free Resource Arbitrator)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#2-quota-garantida-de-canais-para-operadores-humanos-humanreservequota
+//
+// @preExecution
+// - Leitura atômica de `activeGlobalCalls` (`sync/atomic.Int32`)
+// - Verificação de proteção de quota humana (`humanReserveQuota`)
+//
+// @postExecution
+// - Verificação de teto granular de canais do tronco (`max_channels`)
+// - Retorno booleano com código semântico de bloqueio caso rejeitado
 func (cm *ChannelManager) CanAcquireSlot(trunkID string, isHuman bool) (bool, string) {
 	// Nível 1: Teto Global do PBX
 	currGlobal := int(cm.activeGlobalCalls.Load())

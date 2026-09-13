@@ -16,6 +16,20 @@ func NewRefillHandler(processor *core.MailingProcessor) *RefillHandler {
 	return &RefillHandler{processor: processor}
 }
 
+// Refill processa a ingestão assíncrona de um novo arquivo de mailing armazenado no MinIO S3.
+//
+// @pattern Adapter (HTTP Handler / Ingestion)
+// @governedBy docs/rules/CAMPAIGN_SATURATION.md#1-ingestão-de-mailing-e-refill-via-minio-s3-post-apiv1campaignsrefill
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de campos obrigatórios (`tenant_id`, `campaign_id`, `file_uri`)
+// - Verificação de existência e leitura streaming no MinIO S3
+//
+// @postExecution
+// - Inserção em batch de leads no PostgreSQL com Zero Normalização
+// - Atualização de status da campanha e reset de saturação para `NOVA`
+// - Retorno de total de leads importados com sucesso
 func (h *RefillHandler) Refill(w http.ResponseWriter, r *http.Request) {
 	var req domain.RefillRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

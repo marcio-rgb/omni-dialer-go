@@ -31,6 +31,17 @@ func NewTrunkHandler(repo ports.TrunkRepository, cache ports.CachePort, manager 
 	}
 }
 
+// List retorna todos os troncos do tenant com status e telemetria AMI em tempo real.
+//
+// @pattern Adapter (HTTP Handler / Query)
+// @governedBy docs/rules/TRUNKS_LIFECYCLE.md#1-persistência-relacional-de-troncos-tabela-trunks
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação do header obrigatório `X-Tenant-Id`
+//
+// @postExecution
+// - Enriquecimento dos dados com status em cache Redis e canais ativos em `ChannelManager`
 func (h *TrunkHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-Id")
 	if tenantID == "" {
@@ -90,6 +101,18 @@ func (h *TrunkHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Create persiste um novo tronco SIP/PJSIP e aplica sincronização a quente com o Asterisk.
+//
+// @pattern Adapter (HTTP Handler / Mutation)
+// @governedBy docs/rules/TRUNKS_LIFECYCLE.md#3-hot-reload-a-quente-no-asterisk-pbx
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de campos obrigatórios (`id`, `tenant_id`, `name`, `host`)
+//
+// @postExecution
+// - Persistência atômica no PostgreSQL (`trunks`)
+// - Registro de capacidade em `ChannelManager` e hot reload do PJSIP no Asterisk
 func (h *TrunkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var dto domain.CreateTrunkDTO
 	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
@@ -182,6 +205,19 @@ func (h *TrunkHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Update atualiza os parâmetros de um tronco e executa recarga dinâmica no Asterisk.
+//
+// @pattern Adapter (HTTP Handler / Mutation)
+// @governedBy docs/rules/TRUNKS_LIFECYCLE.md#3-hot-reload-a-quente-no-asterisk-pbx
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de `trunk_id` no path e `X-Tenant-Id` no header
+// - Verificação de existência prévia do tronco no banco
+//
+// @postExecution
+// - Persistência das alterações no PostgreSQL
+// - Atualização de limite em `ChannelManager` e hot-reload PJSIP
 func (h *TrunkHandler) Update(w http.ResponseWriter, r *http.Request) {
 	trunkID := chi.URLParam(r, "trunk_id")
 	tenantID := r.Header.Get("X-Tenant-Id")
@@ -287,6 +323,18 @@ func (h *TrunkHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Delete exclui um tronco SIP/PJSIP garantindo salvaguarda contra chamadas ativas em andamento.
+//
+// @pattern Adapter (HTTP Handler / Mutation)
+// @governedBy docs/rules/TRUNKS_LIFECYCLE.md#4-trava-de-proteção-contra-exclusão-de-tronco-ativo-http-409
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Checagem de chamadas ativas em `ChannelManager` (rejeita com 409 Conflict se canais > 0 e force != true)
+//
+// @postExecution
+// - Exclusão física no PostgreSQL
+// - Remoção dos limites no `ChannelManager` e desprovisionamento no PBX
 func (h *TrunkHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	trunkID := chi.URLParam(r, "trunk_id")
 	tenantID := r.Header.Get("X-Tenant-Id")

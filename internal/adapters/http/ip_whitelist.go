@@ -84,6 +84,17 @@ func (m *IPWhitelistMiddleware) IsAllowed(ip string) bool {
 }
 
 // Handler retorna o middleware net/http que intercepta e valida requisições em sub-microssegundo.
+//
+// @pattern Middleware (Chain of Responsibility)
+// @governedBy docs/rules/SECURITY_NETWORK.md#1-autenticação-por-ip-whitelist-em-memória-syncmap
+//
+// @preExecution
+// - Extração de IP real da requisição (`RemoteAddr`, `X-Forwarded-For`)
+// - Verificação na tabela hash em memória `sync.Map` ou faixas CIDR
+//
+// @postExecution
+// - Se não autorizado: Interrupção imediata da cadeia com HTTP 403 Forbidden (RFC 7807)
+// - Se autorizado: Encaminhamento transparente para o próximo handler via `next.ServeHTTP`
 func (m *IPWhitelistMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Ignora verificação para endpoints de health check

@@ -26,7 +26,7 @@ Qualquer alteração — inclusive adição, remoção, alteração de assinatur
 
 **Exige obrigatoriamente e na mesma intervenção a atualização dos workflows correspondentes:**
 1. Atualizar contratos, assinaturas e tipagem no [Agente Go Especialista](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-go-especialista.md).
-2. Atualizar contextos, regras de AMD, variáveis de canal ou roteamento no [Agente Especialista Asterisk](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterik-especialista.md).
+2. Atualizar contextos, regras de AMD, variáveis de canal ou roteamento no [Agente Especialista Asterisk](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-asterisk-especialista.md).
 3. Atualizar o ciclo de vida, rastreamento e matriz no [Agente Auditor de Processo](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-audit-processo.md).
 
 > [!CAUTION]

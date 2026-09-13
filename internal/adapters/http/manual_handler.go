@@ -16,6 +16,20 @@ func NewManualHandler(engine *core.ManualEngine) *ManualHandler {
 	return &ManualHandler{engine: engine}
 }
 
+// DialManual processa uma chamada manual sob demanda para operador humano com prioridade preemptiva.
+//
+// @pattern Strategy (Context / Manual)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#2-quota-garantida-de-canais-para-operadores-humanos-humanreservequota
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de DTO obrigatório (`tenant_id`, `agent_id`, `phone`, `sip_route`)
+// - Alocação prioritária de canal na cota humana reservada (`HumanReserveQuota`) em `ChannelManager`
+//
+// @postExecution
+// - Disparo de comando `Originate` via socket AMI no contexto `from-dialer-manual`
+// - Registro de CorrelationID em `execution_traces`
+// - Retorno de confirmação com status HTTP 201 Created
 func (h *ManualHandler) DialManual(w http.ResponseWriter, r *http.Request) {
 	var req domain.ManualCallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
