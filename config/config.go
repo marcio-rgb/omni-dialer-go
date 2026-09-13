@@ -28,6 +28,7 @@ type Config struct {
 	PacingInterval      time.Duration
 	MaxGlobalChannels   int
 	HumanReserveQuota   int
+	OmniChatWebhookURL  string
 }
 
 // Load lê as variáveis de ambiente e aplica valores default para o ambiente de produção.
@@ -64,6 +65,7 @@ func Load() (*Config, error) {
 		PacingInterval:      time.Duration(1) * time.Second,
 		MaxGlobalChannels:   maxChannels,
 		HumanReserveQuota:   humanQuota,
+		OmniChatWebhookURL:  getEnv("OMNICHAT_WEBHOOK_URL", "http://server:3000/api/telephony/webhook/call-ended"),
 	}
 
 	if cfg.DatabaseURL == "" {

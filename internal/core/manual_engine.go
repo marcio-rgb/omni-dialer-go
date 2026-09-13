@@ -130,6 +130,11 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 	callID := fmt.Sprintf("manual-%s", uuid.New().String())
 	dialChannel := trunk.DialString(destPhone)
 
+	var webhookURL *string
+	if req.WebhookURL != "" {
+		webhookURL = &req.WebhookURL
+	}
+
 	activeChan := &domain.ActiveChannel{
 		ChannelID:  callID,
 		TrunkID:    trunkID,
@@ -138,6 +143,7 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		CallType:   domain.CallTypeManual,
 		AgentID:    &req.AgentID,
 		SIPRoute:   &req.SIPRoute,
+		WebhookURL: webhookURL,
 		StartedAt:  time.Now(),
 		IsAnswered: false,
 	}

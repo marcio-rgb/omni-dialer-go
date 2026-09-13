@@ -15,6 +15,7 @@ import (
 	"dialer-go/internal/adapters/postgres"
 	redisAdapter "dialer-go/internal/adapters/redis"
 	"dialer-go/internal/adapters/storage"
+	"dialer-go/internal/adapters/webhook"
 	"dialer-go/internal/core"
 )
 
@@ -64,11 +65,15 @@ func main() {
 	storageAdapter := storage.NewStorageAdapter(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
 
 	// 6. Core Engines & Arbitragem
+	webhookAdapter := webhook.NewWebhookClient(cfg.OmniChatWebhookURL)
+	callNotifier := core.NewCallNotifier(webhookAdapter, cfg.OmniChatWebhookURL)
+
 	channelMgr := core.NewChannelManager(cfg.MaxGlobalChannels, cfg.HumanReserveQuota, cache)
 	trunkMgr := core.NewTrunkManager(trunkRepo, cache, amiClient, channelMgr, reportRepo, routingRepo)
 	inboundEngine := core.NewInboundEngine(amiClient, routingRepo, channelMgr, "from-internal", "s")
 	predictiveEngine := core.NewPredictiveEngine(amiClient, channelMgr, cache, campaignRepo, trunkRepo, leadRepo)
 	trunkMgr.SetEngines(predictiveEngine, inboundEngine)
+	trunkMgr.SetNotifier(callNotifier)
 	trunkMgr.StartDaemon(ctx)
 	defer trunkMgr.Stop()
 	manualEngine := core.NewManualEngine(amiClient, channelMgr, trunkRepo, cache)

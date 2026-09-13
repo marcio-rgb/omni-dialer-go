@@ -123,6 +123,7 @@ graph TD
 | [`internal/ports/cache_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/cache_port.go) | 43 | Contrato de controle de filas e locks rápidos em memória (Redis). | Secondary Port |
 | [`internal/ports/repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go) | 43 | Contratos de persistência relacional (`Trunk`, `Lead`, `Campaign`, `Report`, `Routing`). | Secondary Port |
 | [`internal/ports/storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go) | 10 | Contrato de armazenamento de objetos S3/MinIO. | Secondary Port |
+| [`internal/ports/webhook_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/webhook_port.go) | 25 | Contrato de notificação de desfecho de chamadas para upstream via Webhook. | Secondary Port |
 
 ---
 
@@ -130,9 +131,10 @@ graph TD
 | Arquivo | LOC | Responsabilidade | Padrões Aplicados |
 | :--- | :--- | :--- | :--- |
 | [`internal/core/channel_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go) | 301 | Arbitragem global e por tronco com `sync/atomic.Int32` e salvaguarda da quota humana. | Semaphore / Lock-free Counter |
-| [`internal/core/trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) | 493 | Pool de troncos, health check periódico AMI, hot reload PJSIP e trava de deleção. | Pool Manager / Circuit Breaker |
+| [`internal/core/trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) | 421 | Pool de troncos, health check periódico AMI, hot reload PJSIP e trava de deleção. | Pool Manager / Circuit Breaker |
+| [`internal/core/call_notifier.go`](file:///home/marcio/ominichat/dialer-go/internal/core/call_notifier.go) | 125 | Despachador de notificações de término/falha de chamadas para o OmniChat via Webhook. | Observer / Dispatcher |
 | [`internal/core/predictive_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go) | 339 | Algoritmo de pacing, cálculo de overdialing, disparo AMI e reserva FILO de leads. | Strategy (Predictive) |
-| [`internal/core/manual_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go) | 204 | Chamadas manuais sob demanda com prioridade preemptiva na cota humana. | Strategy (Manual) |
+| [`internal/core/manual_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go) | 223 | Chamadas manuais sob demanda com prioridade preemptiva na cota humana. | Strategy (Manual) |
 | [`internal/core/inbound_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/inbound_engine.go) | 69 | Roteamento O(1) de chamadas entrantes com base em `phone_trunk_mappings`. | Strategy (Inbound) |
 | [`internal/core/mailing_processor.go`](file:///home/marcio/ominichat/dialer-go/internal/core/mailing_processor.go) | 157 | Ingestão e parsing streaming de arquivos CSV/TXT via MinIO S3. | Batch Ingestion / ETL |
 | [`internal/core/saturation_service.go`](file:///home/marcio/ominichat/dialer-go/internal/core/saturation_service.go) | 108 | Cálculo da régua de 5 níveis de saturação de campanhas. | Analytics Service |
@@ -152,6 +154,7 @@ graph TD
 | [`internal/adapters/postgres/report_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo.go) | 167 | Repositório SQL de métricas operacionais agregadas da tabela `cdrs`. | Repository |
 | [`internal/adapters/redis/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/redis/client.go) | 233 | Cliente Redis para filas, controle de agentes online, pausa e cache de relatórios. | Adapter / Cache |
 | [`internal/adapters/storage/minio_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/storage/minio_adapter.go) | 72 | Cliente MinIO S3 para download em streaming de arquivos de mailing. | Adapter / S3 Client |
+| [`internal/adapters/webhook/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/webhook/client.go) | 88 | Cliente HTTP para despacho de webhooks assíncronos de término de chamadas ao OmniChat. | Adapter / HTTP Client |
 
 ---
 

@@ -21,6 +21,7 @@ type TrunkManager struct {
 	routing    ports.RoutingRepository
 	predictive *PredictiveEngine
 	inbound    *InboundEngine
+	notifier   *CallNotifier
 	stopCh     chan struct{}
 	mu         sync.RWMutex
 }
@@ -43,6 +44,13 @@ func (tm *TrunkManager) SetEngines(predictive *PredictiveEngine, inbound *Inboun
 	defer tm.mu.Unlock()
 	tm.predictive = predictive
 	tm.inbound = inbound
+}
+
+// SetNotifier injeta o despachador de notificações de chamadas para sistemas upstream.
+func (tm *TrunkManager) SetNotifier(notifier *CallNotifier) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.notifier = notifier
 }
 
 // StartDaemon inicializa a escuta de eventos AMI e o loop de qualify de troncos.
@@ -212,6 +220,14 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 			TenantID:     activeChan.TenantID,
 			UpdatedAt:    time.Now(),
 		})
+	}
+
+	tm.mu.RLock()
+	notifier := tm.notifier
+	tm.mu.RUnlock()
+
+	if notifier != nil && activeChan.CallType == domain.CallTypeManual {
+		notifier.DispatchManualHangup(activeChan, disposition, causeInt, duration, billsec, ringSeconds)
 	}
 }
 

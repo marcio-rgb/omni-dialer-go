@@ -48,14 +48,15 @@ type CDR struct {
 
 // ActiveChannel representa o registro em memória rápida de um canal em conversação ou discagem.
 type ActiveChannel struct {
-	ChannelID   string    `json:"channel_id"`
-	TrunkID     string    `json:"trunk_id"`
-	TenantID    string    `json:"tenant_id"`
-	CampaignID  *string   `json:"campaign_id,omitempty"`
-	Phone       string    `json:"phone"`
-	CallType    CallType  `json:"call_type"`
-	AgentID     *string   `json:"agent_id,omitempty"`
-	SIPRoute    *string   `json:"sip_route,omitempty"`
+	ChannelID   string           `json:"channel_id"`
+	TrunkID     string           `json:"trunk_id"`
+	TenantID    string           `json:"tenant_id"`
+	CampaignID  *string          `json:"campaign_id,omitempty"`
+	Phone       string           `json:"phone"`
+	CallType    CallType         `json:"call_type"`
+	AgentID     *string          `json:"agent_id,omitempty"`
+	SIPRoute    *string          `json:"sip_route,omitempty"`
+	WebhookURL  *string          `json:"webhook_url,omitempty"`
 	StartedAt   time.Time        `json:"started_at"`
 	IsAnswered  bool             `json:"is_answered"`
 	Disposition *CallDisposition `json:"disposition,omitempty"`
@@ -72,15 +73,16 @@ type PhoneTrunkMapping struct {
 }
 
 type ManualCallRequest struct {
-	TenantID string `json:"tenant_id"`
-	AgentID  string `json:"agent_id"`
-	Phone    string `json:"phone"`
-	SIPRoute string `json:"sip_route"`
-	TrunkID  string `json:"trunk_id,omitempty"`
-	LeadName string `json:"lead_name,omitempty"`
-	LeadCPF  string `json:"lead_cpf,omitempty"`
-	Name     string `json:"name,omitempty"`
-	CPF      string `json:"cpf,omitempty"`
+	TenantID   string `json:"tenant_id"`
+	AgentID    string `json:"agent_id"`
+	Phone      string `json:"phone"`
+	SIPRoute   string `json:"sip_route"`
+	TrunkID    string `json:"trunk_id,omitempty"`
+	LeadName   string `json:"lead_name,omitempty"`
+	LeadCPF    string `json:"lead_cpf,omitempty"`
+	Name       string `json:"name,omitempty"`
+	CPF        string `json:"cpf,omitempty"`
+	WebhookURL string `json:"webhook_url,omitempty"`
 }
 
 type LeadQueueItem struct {
@@ -94,6 +96,27 @@ type ManualCallResponse struct {
 	CallID    string `json:"call_id"`
 	Status    string `json:"status"` // "dialing"
 	TrunkUsed string `json:"trunk_used"`
+}
+
+// CallEndedWebhookPayload representa o payload canônico disparado via webhook ao término da chamada.
+type CallEndedWebhookPayload struct {
+	Event           string          `json:"event"` // "telephony.call_ended"
+	CallID          string          `json:"call_id"`
+	CallType        CallType        `json:"call_type"`
+	TenantID        string          `json:"tenant_id"`
+	AgentID         *string         `json:"agent_id,omitempty"`
+	Phone           string          `json:"phone"`
+	TrunkUsed       string          `json:"trunk_used"`
+	Disposition     CallDisposition `json:"disposition"`
+	HangupCause     int             `json:"hangup_cause"`
+	HangupReason    string          `json:"hangup_reason"`
+	IsAnswered      bool            `json:"is_answered"`
+	DurationSeconds int             `json:"duration_seconds"`
+	BillsecSeconds  int             `json:"billsec_seconds"`
+	RingSeconds     int             `json:"ring_seconds"`
+	StartedAt       time.Time       `json:"started_at"`
+	EndedAt         time.Time       `json:"ended_at"`
+	Timestamp       int64           `json:"timestamp"`
 }
 
 type AgentDemandDTO struct {

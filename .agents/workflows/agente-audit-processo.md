@@ -139,6 +139,14 @@ sequenceDiagram
 - **Disparo no PBX:** [`ami.Originate`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L231) apontando para contexto `from-dialer-manual` conectando diretamente ao `sip_route` do operador.
 - **Topologia RTP:** A perna do tronco externo recebe o IP público do transporte PJSIP (`37.60.228.113`) e a perna da sala do operador conecta via overlay interna (`10.0.1.0/24`), garantindo áudio bidirecional sem timeout de mídia.
 
+### 3.3. Notificação Assíncrona de Desfecho (Webhook OmniChat)
+- **Despachador:** [`CallNotifier.DispatchManualHangup`](file:///home/marcio/ominichat/dialer-go/internal/core/call_notifier.go#L68)
+- **Gatilho de Disparo:** Evento AMI `Hangup` interceptado por `TrunkManager.handleHangup` para canais com `CallType = MANUAL`.
+- **Cenários Cobertos:**
+  - **Falha de Atendimento (`!is_answered`):** Dispara evento `telephony.manual_call_failed` com razão amigável (`Número Ocupado`, `Não Atende`, `Circuito Congestionado`, `Número Inexistente`, etc.).
+  - **Término Normal (`is_answered`):** Dispara evento `telephony.manual_call_ended` com duração e bilhetagem.
+- **Payload (`CallEndedWebhookPayload`):** `event`, `call_id`, `call_type`, `tenant_id`, `agent_id`, `phone`, `trunk_used`, `disposition`, `hangup_cause`, `hangup_reason`, `is_answered`, `duration_seconds`, `billsec_seconds`, `ring_seconds`, `started_at`, `ended_at`, `timestamp`.
+
 ---
 
 ## 4. Mapeamento de Relatórios & Gravação de CDR
@@ -156,7 +164,7 @@ sequenceDiagram
 | `fn_audit_persist_predictive_result` | [`schema.sql`](file:///home/marcio/ominichat/dialer-go/database/schema.sql#L161) | `(p_cdr_id, p_tenant_id, p_campaign_id, ...)` | `JSONB` | **SIM** |
 | [`PredictiveEngine.ProcessDemand`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L35) | `predictive_engine.go` | `ctx, *PredictiveDemandRequest` | `*PredictiveDemandResponse, error` | Não |
 | [`ManualEngine.DialManual`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go#L29) | `manual_engine.go` | `ctx, *ManualCallRequest` | `*ManualCallResponse, error` | Não |
-| [`TrunkManager.handleHangup`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go#L116) | `trunk_manager.go` | `ctx, attrs map[string]string` | `void` | **SIM (Grava CDR & Receptivo O(1))** |
+| [`TrunkManager.handleHangup`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go#L116) | `trunk_manager.go` | `ctx, attrs map[string]string` | `void` | **SIM (CDR, Receptivo O(1) & Webhook CallNotifier)** |
 
 ---
 

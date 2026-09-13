@@ -57,6 +57,7 @@ O **Dialer-Go** é o motor central de alta performance para orquestração, sina
 | **Controle de Acesso HTTP** | **Middleware (Chain of Resp.)** | `IPWhitelistMiddleware` intercepta o fluxo HTTP Chi antes de qualquer processamento de rota, validando permissões de rede em sub-microssegundo. |
 | **Reconexão de Socket & DB** | **Circuit Breaker / Retry Backoff** | Conexões com PostgreSQL e AMI implementam retentativas com backoff exponencial para absorver reinicializações de containers sem travar a aplicação em panics. |
 | **Transações e Saturação** | **Transactional Outbox & Stored Procedures ACID** | Stored procedures PostgreSQL (`fn_audit_claim_predictive_batch`, `fn_audit_persist_predictive_result`, `fn_audit_recycle_campaign_leads`) garantem atomicidade e consistência estrita na reserva e devolução de leads em concorrência. |
+| **Notificação de Desfecho** | **Adapter & Observer Pattern** | Despacha eventos assíncronos de término e falha de chamada (`ports.WebhookPort` / `adapters/webhook`) para o OmniChat com timeout estrito de 5s. |
 
 ---
 

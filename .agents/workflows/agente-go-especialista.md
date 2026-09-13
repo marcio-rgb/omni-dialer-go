@@ -30,6 +30,7 @@ graph TD
         CachePort["ports.CachePort"]
         RepoPort["ports.Trunk/Lead/Campaign/Report/RoutingRepository"]
         StoragePort["ports.StoragePort"]
+        WebhookPort["ports.WebhookPort"]
     end
 
     subgraph Core["3. Core Domain Layer (Regras de Negócio)"]
@@ -38,6 +39,7 @@ graph TD
         ManEngine["core.ManualEngine"]
         InbEngine["core.InboundEngine"]
         TrunkMgr["core.TrunkManager"]
+        CallNotif["core.CallNotifier (Webhook Dispatcher)"]
         MailProc["core.MailingProcessor"]
         SatServ["core.SaturationService"]
     end
@@ -48,6 +50,7 @@ graph TD
         RedisAdp["adapters/redis (go-redis/v9)"]
         AMIAdp["adapters/ami (TCP Socket puro)"]
         StorageAdp["adapters/storage (MinIO S3 Client)"]
+        WebhookAdp["adapters/webhook (HTTP Client)"]
     end
 
     Core --> Portas
@@ -72,9 +75,10 @@ graph TD
 - `CDR`: Histórico de tarifação persistido em PostgreSQL.
   - Campos: `ID` (string), `TenantID` (string), `CampaignID` (*string), `Phone` (string), `AgentID` (*string), `CallType` (`CallType`), `Disposition` (`CallDisposition`), `SIPStatus` (*int), `HangupCause` (*int), `DurationSeconds` (int), `BillsecSeconds` (int), `RingSeconds` (int), `TrunkUsed` (string), `CreatedAt`, `InitiatedAt`, `AnsweredAt`, `EndedAt` (*time.Time).
 - `ActiveChannel`: Estado volátil de chamada em conversação ou discagem.
-  - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `StartedAt`, `IsAnswered`.
+  - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `WebhookURL`, `StartedAt`, `IsAnswered`, `Disposition`.
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
-- `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`).
+- `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`, `WebhookURL`).
+- `CallEndedWebhookPayload`: DTO canônico de notificação assíncrona de término/falha de chamada para o OmniChat (`Event`, `CallID`, `CallType`, `TenantID`, `AgentID`, `Phone`, `TrunkUsed`, `Disposition`, `HangupCause`, `HangupReason`, `IsAnswered`, `DurationSeconds`, `BillsecSeconds`, `RingSeconds`, `StartedAt`, `EndedAt`, `Timestamp`).
 - `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas.
 
 ### 3.2. Campanhas e Saturação ([`campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go))
@@ -146,7 +150,12 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | `StoragePort` | `DownloadFileStream` | `DownloadFileStream(ctx context.Context, fileURI string) (io.ReadCloser, error)` | Streaming direto de arquivos ZIP/CSV do MinIO S3 ou sistema local. |
 
-### 4.5. `http.IPWhitelistMiddleware` ([`ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go))
+### 4.5. `ports.WebhookPort` ([`webhook_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/webhook_port.go))
+| Interface | Método | Assinatura | Finalidade |
+| :--- | :--- | :--- | :--- |
+| `WebhookPort` | `NotifyCallEnded` | `NotifyCallEnded(ctx context.Context, webhookURL string, payload *domain.CallEndedWebhookPayload) error` | Dispara notificação HTTP POST de término de chamada para o OmniChat. |
+
+### 4.6. `http.IPWhitelistMiddleware` ([`ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go))
 - **Segurança de Rede & Resiliência de Borda:**
   - Suporta IPs literais e máscaras CIDR (`net.ParseCIDR` com busca em `[]*net.IPNet` thread-safe via `sync.RWMutex`).
   - Suporta wildcard `*` para redes dinâmicas ou testes.
@@ -205,7 +214,12 @@ ceil$$
 - `StartDaemon(ctx context.Context)`: Inicia goroutines paralelas para escuta de eventos AMI e qualify loop (ticker de 30s).
 - `handleContactStatus`: Rastreia RTT e disponibilidade de endpoints PJSIP.
 - `handleRegistry`: Rastreia status de registros de troncos com autenticação.
+- `SetNotifier(notifier *CallNotifier)`: Injeta o despachador de webhooks assíncronos de chamadas.
 - `ReloadPBXTrunks(ctx context.Context) error`: Reconcilia contadores e dispara `pjsip reload` e `dialplan reload`.
+
+### 5.6. `core.CallNotifier` ([`call_notifier.go`](file:///home/marcio/ominichat/dialer-go/internal/core/call_notifier.go))
+- `ResolveHangupReason(disposition domain.CallDisposition, causeInt int, isAnswered bool) string`: Traduz causas de desligamento Q.850 e desfechos em mensagens amigáveis em português (`Número Ocupado`, `Não Atende`, etc.).
+- `DispatchManualHangup(activeChan *domain.ActiveChannel, disposition domain.CallDisposition, causeInt int, duration, billsec, ringSeconds int)`: Despacha payload canônico `CallEndedWebhookPayload` para o OmniChat via `WebhookPort` em goroutine assíncrona desacoplada.
 
 ---
 
