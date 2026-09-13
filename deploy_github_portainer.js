@@ -8,22 +8,9 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function getGitHubConfig() {
-    try {
-        const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
-        const match = remoteUrl.match(/https:\/\/([^@]+)@github\.com\/([^\/]+)\/([^\.]+)/);
-        if (match) {
-            return {
-                token: match[1],
-                owner: match[2],
-                repo: match[3]
-            };
-        }
-    } catch (err) {
-        // Ignored
-    }
-
     const envPaths = [
         path.join(__dirname, '../ecosystem/.env'),
+        path.join(__dirname, '../ecosystem/.ENV'),
         path.join(__dirname, '.env')
     ];
 
@@ -39,6 +26,21 @@ function getGitHubConfig() {
                 };
             }
         }
+    }
+
+    try {
+        const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
+        const match = remoteUrl.match(/https:\/\/(?:([^:@]+):)?([^@]+)@github\.com\/([^\/]+)\/([^\.]+)/);
+        if (match) {
+            const token = match[2].startsWith('ghp_') || match[2].startsWith('github_pat_') ? match[2] : (match[1] || match[2]);
+            return {
+                token: token,
+                owner: match[3],
+                repo: match[4]
+            };
+        }
+    } catch (err) {
+        // Ignored
     }
 
     return {
@@ -217,6 +219,32 @@ async function main() {
         const swarmId = 'w2e8eye8z0r9688wzbkubemtw';
         const stackName = 'omni-dialer-go';
 
+        const authObj = {
+            username: gitConfig.owner,
+            password: gitConfig.token,
+            serveraddress: 'ghcr.io'
+        };
+        const authHeader = Buffer.from(JSON.stringify(authObj)).toString('base64');
+
+        // Pré-carrega a imagem atualizada no nó Docker com autenticação do GHCR
+        console.log('   - Pré-carregando imagem Docker atualizada no nó Docker com credenciais GHCR...');
+        try {
+            const pullRes = await fetch(`${envConfig.portainerUrl}/endpoints/${endpointId}/docker/images/create?fromImage=` + encodeURIComponent('ghcr.io/marcio-rgb/omni-dialer-go:latest'), {
+                method: 'POST',
+                headers: {
+                    'X-API-Key': envConfig.portainerKey,
+                    'X-Registry-Auth': authHeader
+                }
+            });
+            if (pullRes.ok) {
+                console.log('   ✅ Imagem Docker puxada com sucesso no nó Swarm.');
+            } else {
+                console.warn('   ⚠️ Aviso ao puxar imagem via Docker API:', await pullRes.text());
+            }
+        } catch (pullErr) {
+            console.warn('   ⚠️ Aviso ao pré-carregar imagem:', pullErr.message);
+        }
+
         try {
             const resList = await fetch(`${envConfig.portainerUrl}/stacks`, {
                 headers: { 'X-API-Key': envConfig.portainerKey }
@@ -233,7 +261,8 @@ async function main() {
                     method: 'PUT',
                     headers: {
                         'X-API-Key': envConfig.portainerKey,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Registry-Auth': authHeader
                     },
                     body: JSON.stringify({
                         StackFileContent: composeContent,
@@ -254,7 +283,8 @@ async function main() {
                     method: 'POST',
                     headers: {
                         'X-API-Key': envConfig.portainerKey,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Registry-Auth': authHeader
                     },
                     body: JSON.stringify({
                         name: stackName,
@@ -270,6 +300,31 @@ async function main() {
                 }
                 console.log('✅ STACK DIALER-GO CRIADA E DEPLOYADA COM SUCESSO NO PORTAINER!');
             }
+
+            console.log('⏳ Aguardando convergência dos serviços Swarm...');
+            await sleep(8000);
+            try {
+                const resServices = await fetch(`${envConfig.portainerUrl}/endpoints/${endpointId}/docker/services`, {
+                    headers: { 'X-API-Key': envConfig.portainerKey }
+                });
+                if (resServices.ok) {
+                    const services = await resServices.json();
+                    const dialerService = services.find(s => s.Spec && s.Spec.Name === 'omni-dialer-go_dialer-go');
+                    if (dialerService) {
+                        const resTasks = await fetch(`${envConfig.portainerUrl}/endpoints/${endpointId}/docker/tasks?filters=${encodeURIComponent(JSON.stringify({ service: [dialerService.ID] }))}`, {
+                            headers: { 'X-API-Key': envConfig.portainerKey }
+                        });
+                        if (resTasks.ok) {
+                            const tasks = await resTasks.json();
+                            const latestTask = tasks[0];
+                            console.log(`📊 Status do serviço dialer-go: ${latestTask ? latestTask.Status.State : 'indisponível'} (${latestTask ? latestTask.Status.Message : ''})`);
+                        }
+                    }
+                }
+            } catch (statusErr) {
+                // Ignore status check error
+            }
+
             console.log('🎉 PROCESSO DE DEPLOY COMPLETO CONCLUÍDO!');
         } catch (err) {
             console.error('❌ Falha ao realizar deploy no Portainer:', err.message);
