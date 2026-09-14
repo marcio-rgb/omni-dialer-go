@@ -190,6 +190,13 @@ graph TD
   - Bypass explícito de validação para `/health` e `/metrics`.
   - Extrai IP real via `X-Forwarded-For` de proxies reversos confiáveis (Traefik).
 
+### 4.8. `http.AudioWordsHandler` ([`audio_words_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/audio_words_handler.go))
+- **Streaming de Gravações Reais do Asterisk (`ServeRecording`):**
+  - Transmite arquivos de áudio WAV gravados em `/var/spool/asterisk/monitor/`.
+  - Suporta preflight `OPTIONS` com headers de CORS (`Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, HEAD, OPTIONS`, `Access-Control-Expose-Headers`).
+  - Suporta streaming parcial `HTTP 206 Partial Content` nativo via `http.ServeFile` com cabeçalho `Accept-Ranges: bytes`.
+  - Retorna `RFC 7807 Problem Details` (404) quando o arquivo não existe ou quando há tentativa de directory traversal (`..`).
+
 ---
 
 ## 5. Engenharia dos Motores Centrais (`internal/core/`)

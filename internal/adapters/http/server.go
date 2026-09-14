@@ -102,6 +102,7 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 				// 6.1. Streaming de Gravações Reais do Asterisk (MixMonitor)
 				api.Get("/recordings/*", handlers.Audio.ServeRecording)
 				api.Head("/recordings/*", handlers.Audio.ServeRecording)
+				api.Options("/recordings/*", handlers.Audio.ServeRecording)
 			}
 
 			// 7. Configuração Dinâmica de AMD & Hot-Reload Asterisk

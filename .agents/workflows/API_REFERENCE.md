@@ -700,6 +700,27 @@ Recupera o registro canônico de uma chamada individual através do seu identifi
 
 ---
 
+### 3.9.3. Streaming e Download de Gravação de Áudio (`GET /api/v1/recordings/*`)
+Transmite arquivos de áudio gravados pelo Asterisk MixMonitor com suporte a streaming HTTP 206 Range (scrubbing/seek no player de áudio do navegador) e CORS aberto para integração web/CRM.
+
+#### Métodos Suportados:
+- `GET /api/v1/recordings/{ano}/{mes}/{dia}/{arquivo}.wav`
+- `HEAD /api/v1/recordings/{ano}/{mes}/{dia}/{arquivo}.wav`
+- `OPTIONS /api/v1/recordings/*` (Preflight CORS)
+
+#### Headers de CORS e Streaming:
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: GET, HEAD, OPTIONS`
+- `Access-Control-Allow-Headers: Range, Content-Type, Authorization`
+- `Access-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges`
+- `Content-Type: audio/wav`
+- `Accept-Ranges: bytes`
+
+#### Resposta de Sucesso:
+- `200 OK` (Download completo) ou `206 Partial Content` (Streaming/Seek com header `Range`).
+
+---
+
 ### 3.10. Listagem de Troncos com Telemetria (`GET /api/v1/trunks`)
 Retorna todos os troncos cadastrados enriquecidos com telemetria de latência RTT em milissegundos e ocupação de canais em tempo real.
 

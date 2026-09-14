@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -170,3 +172,72 @@ func TestReportHandler_GetCDR(t *testing.T) {
 		}
 	})
 }
+
+func TestAudioWordsHandler_ServeRecording(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("ASTERISK_MONITOR_DIR", tmpDir)
+	defer os.Unsetenv("ASTERISK_MONITOR_DIR")
+
+	yearDir := filepath.Join(tmpDir, "2026", "09", "14")
+	if err := os.MkdirAll(yearDir, 0755); err != nil {
+		t.Fatalf("falha ao criar diretorio de teste: %v", err)
+	}
+	wavPath := filepath.Join(yearDir, "test-call.wav")
+	fakeAudio := []byte("RIFF1234WAVEfmt test audio data stream")
+	if err := os.WriteFile(wavPath, fakeAudio, 0644); err != nil {
+		t.Fatalf("falha ao escrever arquivo de teste: %v", err)
+	}
+
+	handler := NewAudioWordsHandler(nil)
+	r := chi.NewRouter()
+	r.HandleFunc("/api/v1/recordings/*", handler.ServeRecording)
+
+	// 1. Sucesso: OPTIONS preflight com headers de CORS
+	t.Run("CORS_OptionsPreflight", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/recordings/2026/09/14/test-call.wav", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("esperado status 200 para OPTIONS, obteve %d", w.Code)
+		}
+		if origin := w.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
+			t.Fatalf("esperado Access-Control-Allow-Origin '*', obteve %s", origin)
+		}
+	})
+
+	// 2. Sucesso: GET streaming de áudio com headers corretos
+	t.Run("GET_AudioStream", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/recordings/2026/09/14/test-call.wav", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("esperado status 200, obteve %d", w.Code)
+		}
+		if contentType := w.Header().Get("Content-Type"); contentType != "audio/wav" {
+			t.Fatalf("esperado Content-Type 'audio/wav', obteve '%s'", contentType)
+		}
+		if origin := w.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
+			t.Fatalf("esperado Access-Control-Allow-Origin '*', obteve %s", origin)
+		}
+		if w.Body.String() != string(fakeAudio) {
+			t.Fatalf("conteudo do audio difere do esperado")
+		}
+	})
+
+	// 3. Falha: Arquivo não encontrado (404 Problem Details)
+	t.Run("NotFound", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/recordings/2026/09/14/not-found.wav", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("esperado status 404, obteve %d", w.Code)
+		}
+		if origin := w.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
+			t.Fatalf("esperado Access-Control-Allow-Origin '*' no 404, obteve %s", origin)
+		}
+	})
+}
+

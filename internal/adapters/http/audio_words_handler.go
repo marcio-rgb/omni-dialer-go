@@ -129,8 +129,18 @@ func (h *AudioWordsHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(wavBytes)
 }
 
-// ServeRecording transmite o arquivo WAV gravado pelo Asterisk MixMonitor com suporte nativo a HTTP 206 Range.
+// ServeRecording transmite o arquivo WAV gravado pelo Asterisk MixMonitor com suporte nativo a HTTP 206 Range e CORS.
 func (h *AudioWordsHandler) ServeRecording(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type, Authorization")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	relPath := chi.URLParam(r, "*")
 	if relPath == "" {
 		domain.NewErrBadRequest("MISSING_PATH", "Caminho da gravacao e obrigatorio").WriteJSON(w)
