@@ -66,7 +66,7 @@ sequenceDiagram
 | `[pre-dial-vivo]` | Normalização de cabeçalhos SIP | Injeta `TRUNK_ID` no `CALLERID(num)`, `P-Asserted-Identity` e `User-Agent` antes do envio do INVITE. |
 | `[outbound-vivo]` | Rota externa direta | Utiliza prefixo `b(pre-dial-vivo^s^1)` no comando `Dial`. |
 | `[from-dialer-amd]` | Ponto de entrada preditivo | Salto sem delay (`Goto(triagem-amd,s,1)`) para o motor de análise. |
-| `[triagem-amd]` | Triagem Ativa Full-Duplex | Atendimento imediato (`Answer`), disparo de `UserEvent(CallAnswered)` para marcação precisa de `answered_at`, `MixMonitor` em background (`b`), reprodução de áudio estruturado concatenado (`saudacao` + `work_word` + `falo_com` + `nome`) e escuta concorrente via EAGI Vosk (`FD 3`). Sem silêncio passivo (*dead air*). |
+| `[triagem-amd]` | Triagem Ativa Full-Duplex | Atendimento imediato (`Answer`), disparo de `UserEvent(CallAnswered)` para marcação precisa de `answered_at`, `MixMonitor` em background (`b`), reprodução da saudação única natural `"Alô, tudo bem!?"` (`alo_tudo_bem.wav`) e escuta concorrente via EAGI Vosk (`FD 3`). Sem silêncio passivo (*dead air*). |
 | `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-Name`, `X-Lead-CPF` e `X-Campaign-Id`. **Ressalva:** `${LEAD_NAME}` recebe estritamente o nome original completo com acentos (`leads.name`), enquanto `${AUDIO_NAME}` recebe o slug normalizado para áudios locais `.wav`. |
 | `[from-dialer-manual]` | Entrega de discagem manual | Disparo de `UserEvent(CallAnswered)` na conexão e roteamento da perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
 | `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Extensão `9999` conecta chamada à sala `AGENT_ROOM` retornando dinamicamente ao IP de origem (`${CHANNEL(pjsip,remote_addr)}`), sem IPs fixos, ou com fallback para o endpoint `livekit-sip`. |
@@ -102,9 +102,9 @@ O script EAGI executa como processo filho do Asterisk com comunicação de ultra
 2. **Bufferização Dinâmica:** Leitura em chunks de 1600 bytes (100 ms de áudio) enviados imediatamente via WebSocket RFC 6455 ao servidor Kaldi-Vosk.
 3. **Análise Semântica em Três Vereditos:**
    - **Tabela de Caixas Postais:** `caixa postal`, `deixe seu recado`, `apos o sinal`, `nao pode atender`, `vivo informa`, `claro informa`, `tim informa`, etc. $\rightarrow$ `VOSK_AMD_STATUS=MACHINE`, `VOSK_AMD_CAUSE=VOICEMAIL_<FRASE>`.
-   - **Tabela de Saudações Humanas:** `alo`, `ola`, `oi`, `pronto`, `pois nao`, `quem fala`, `opa`, `bom dia`, etc. $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_<SAUDACAO>`.
-   - **Fala Natural:** Fala transcrita que não se enquadre em saudações fixas nem termos de caixa postal $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_NATURAL_SPEECH`.
-   - **Silêncio Absoluto (Zero Transcrição):** Nenhuma fala detectada durante a reprodução do áudio estruturado $\rightarrow$ `VOSK_AMD_STATUS=MACHINE`, `VOSK_AMD_CAUSE=VOICEMAIL_SILENCE`.
+   - **Tabela de Saudações Humanas:** `alo`, `tudo`, `tudo bem`, `tudo e voce`, `ola`, `oi`, `pronto`, `pois nao`, `quem fala`, `opa`, `bom dia`, etc. $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_<SAUDACAO>`.
+   - **Fala Natural:** Fala transcrita que não se enquadre em termos de caixa postal $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_NATURAL_SPEECH`.
+   - **Silêncio Após Saudação (Cliente ouvindo):** Nenhuma fala detectada ou cliente ouvindo calado $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_SILENCE_ASSUMED` (Regra de Ouro: nunca derrubar humano por silêncio após atendimento).
 4. **Fast-Exit (Saída Antecipada):** Assim que a transcrição parcial ou total contém qualquer saudação humana (ou termo explícito de caixa postal), o loop é interrompido imediatamente.
 5. **Descarte com Notificação AMI no Dialplan:** Ao identificar `MACHINE`, o Asterisk dispara `UserEvent(PredictiveMachine, Channel, Uniqueid, Phone, LeadId, CampaignId, Cause)` antes do `Hangup()`, permitindo que o `TrunkManager` grave o CDR com disposição `VOICEMAIL` e requebre o lead para retentativa.
 

@@ -76,6 +76,15 @@ var humanGreetings = []string{
 	"com ela",
 	"o que deseja",
 	"diga",
+	"tudo",
+	"tudo bem",
+	"tudo e voce",
+	"tudo bom",
+	"beleza",
+	"joia",
+	"ola tudo bem",
+	"alo tudo bem",
+	"alo quem fala",
 }
 
 func loadDynamicConfig(maxDuration *float64) {
@@ -115,7 +124,8 @@ func normalizeText(s string) string {
 }
 
 // ClassifyOutcome analisa o texto acumulado da chamada e determina o status e causa da triagem.
-// Silêncio (texto vazio) é rigorosamente classificado como MACHINE com causa VOICEMAIL_SILENCE.
+// Se houver termos inequívocos de caixa postal/operadora, classifica como MACHINE.
+// Silêncio (texto vazio) ou saudações/fala natural são classificados como HUMAN por segurança (Regra de Ouro da Telefonia).
 func ClassifyOutcome(fullText string, vmPhrases, greetings []string) (status, cause string) {
 	if len(vmPhrases) == 0 {
 		vmPhrases = voicemailPhrases
@@ -126,7 +136,9 @@ func ClassifyOutcome(fullText string, vmPhrases, greetings []string) (status, ca
 
 	norm := normalizeText(fullText)
 	if norm == "" {
-		return "MACHINE", "VOICEMAIL_SILENCE"
+		// Cliente atendeu e permaneceu ouvindo a saudação em silêncio.
+		// Na dúvida, transfere para o operador humano para não perder cliente real.
+		return "HUMAN", "HUMAN_SILENCE_ASSUMED"
 	}
 
 	for _, phrase := range vmPhrases {

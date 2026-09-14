@@ -92,7 +92,7 @@ func TestLoadDynamicConfig(t *testing.T) {
 	}
 }
 
-func TestClassifyOutcome_SilenceIsVoicemail(t *testing.T) {
+func TestClassifyOutcome_SilenceAssumesHuman(t *testing.T) {
 	silenceCases := []string{
 		"",
 		"   ",
@@ -101,11 +101,11 @@ func TestClassifyOutcome_SilenceIsVoicemail(t *testing.T) {
 
 	for _, tc := range silenceCases {
 		status, cause := ClassifyOutcome(tc, nil, nil)
-		if status != "MACHINE" {
-			t.Errorf("para silêncio %q, esperava status MACHINE, obteve %q", tc, status)
+		if status != "HUMAN" {
+			t.Errorf("para silêncio %q, esperava status HUMAN, obteve %q", tc, status)
 		}
-		if cause != "VOICEMAIL_SILENCE" {
-			t.Errorf("para silêncio %q, esperava causa VOICEMAIL_SILENCE, obteve %q", tc, cause)
+		if cause != "HUMAN_SILENCE_ASSUMED" {
+			t.Errorf("para silêncio %q, esperava causa HUMAN_SILENCE_ASSUMED, obteve %q", tc, cause)
 		}
 	}
 }
@@ -138,6 +138,8 @@ func TestClassifyOutcome_HumanSpeech(t *testing.T) {
 		expectedCause string
 	}{
 		{"alo", "HUMAN_ALO"},
+		{"tudo bem quem fala", "HUMAN_TUDO"},
+		{"tudo e voce", "HUMAN_TUDO"},
 		{"opa bom dia", "HUMAN_OPA"},
 		{"sim com quem", "HUMAN_SIM"},
 		{"eu nao quero nada disso obrigado", "HUMAN_NATURAL_SPEECH"},

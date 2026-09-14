@@ -45,7 +45,7 @@ func main() {
 		wsURL = "ws://127.0.0.1:2700"
 	}
 
-	maxDuration := 6.0 // Janela para reprodução do áudio estruturado + resposta
+	maxDuration := 2.8 // Janela otimizada: ~1.1s para áudio "Alô, tudo bem!?" + ~1.7s para resposta do cliente
 	if envDur := os.Getenv("VOSK_MAX_DURATION_SEC"); envDur != "" {
 		if d, err := strconv.ParseFloat(envDur, 64); err == nil && d > 0 {
 			maxDuration = d
@@ -170,40 +170,26 @@ func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
 		}
 	}
 
-	var files []string
-	if fileExists(filepath.Join(audioBaseDir, "saudacao.wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "saudacao"))
-	} else if fileExists(filepath.Join(audioBaseDir, "base", "saudacao.wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "base", "saudacao"))
-	}
-
-	if workWord != "" {
-		normWork := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(workWord), " ", "_"))
-		if fileExists(filepath.Join(audioBaseDir, "work_words", normWork+".wav")) {
-			files = append(files, filepath.Join(audioBaseDir, "work_words", normWork))
+	targetAudio := ""
+	for _, candidate := range []string{
+		filepath.Join(audioBaseDir, "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "words", "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "base", "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "saudacao"),
+		filepath.Join(audioBaseDir, "base", "saudacao"),
+	} {
+		if fileExists(candidate + ".wav") {
+			targetAudio = candidate
+			break
 		}
 	}
 
-	if fileExists(filepath.Join(audioBaseDir, "falo_com.wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "falo_com"))
-	} else if fileExists(filepath.Join(audioBaseDir, "base", "falo_com.wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "base", "falo_com"))
-	}
-
-	if audioName != "" {
-		normName := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(audioName), " ", "_"))
-		if fileExists(filepath.Join(audioBaseDir, "names", normName+".wav")) {
-			files = append(files, filepath.Join(audioBaseDir, "names", normName))
-		}
-	}
-
-	if len(files) == 0 {
+	if targetAudio == "" {
 		finished.Store(true)
 		return
 	}
 
-	concatPath := strings.Join(files, "&")
-	agiSend(fmt.Sprintf("EXEC Background %s", concatPath))
+	agiSend(fmt.Sprintf("EXEC Background %s", targetAudio))
 	finished.Store(true)
 }
 
