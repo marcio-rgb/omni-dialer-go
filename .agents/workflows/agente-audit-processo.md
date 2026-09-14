@@ -84,8 +84,12 @@ sequenceDiagram
             Engine->>Cache: SetInflatedSuccessRate(30s)
             Engine->>AMI: Hangup(Cause 16)
         end
-    else Secretária Eletrônica / IA
-        Dialplan->>AMI: UserEvent(PredictiveAi) / Hangup imediato
+    else Caixa Postal / Silêncio Detectado
+        Dialplan->>AMI: UserEvent(PredictiveMachine)
+        AMI->>TrunkMgr: Evento UserEvent -> SetCallDisposition(VOICEMAIL)
+        Dialplan->>AMI: Hangup(Cause 16)
+    else Atendimento por IA (Bot)
+        Dialplan->>AMI: UserEvent(PredictiveAi)
     end
 
     Note over AMI,TrunkMgr: Término da Chamada
@@ -97,7 +101,7 @@ sequenceDiagram
 
 ### 2.1. Gatilho e Notificação Inicial
 - **Método Notificador:** [`PredictiveHandler.Demand`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/predictive_handler.go#L19) (`POST /api/v1/predictive/demand`)
-- **Contrato de Entrada (`PredictiveDemandRequest`):** `tenant_id` (string), `campaign_id` (string), `aggressiveness` (*float64, opcional), `available_agents` (`[]AgentDemandDTO`).
+- **Contrato de Entrada (`PredictiveDemandRequest`):** `tenant_id` (string), `campaign_id` (string), `aggressiveness` (*float64, opcional), `min_channels_per_agent` (*int, opcional - default 7), `available_agents` (`[]AgentDemandDTO`).
 - **Contrato de Saída (`PredictiveDemandResponse`):** `campaign_id` (string), `dialing_channels` (int), `status` (string).
 - **Status de Trace:** Suportado via CorrelationID (`pred-corr-<uuid>`); toggleable.
 - **Gravação de CDR:** Não.
@@ -110,7 +114,7 @@ sequenceDiagram
   3. **Esgotamento da Fila de Leads:** [`cache.PopLead`](file:///home/marcio/ominichat/dialer-go/internal/ports/cache_port.go#L20) vazio -> cessa novos disparos.
   4. **Saturação de Troncos:** Todos os troncos elegíveis atingem `active >= max_channels` ou PBX atinge teto global.
 - **Gatilho de Início:** Demanda recebida com operadores ociosos (`available_agents > 0`) e fila de leads abastecida.
-- **Cálculo de Overdialing:** $\text{rawChannels} = (\text{numAgents} / \text{contactProbability}) \times (1.0 + (\text{ringTime} / \text{talkTime})) \times \text{aggressiveness}$.
+- **Cálculo de Overdialing com Piso Mínimo:** $\text{Demand} = \max\left(\text{numAgents} \times \text{minRatio}, \left\lceil \frac{\text{numAgents}}{\text{contactProb}} \times \left(1.0 + \frac{\text{ringTime}}{\text{talkTime}}\right) \times \text{aggressiveness}\right\rceil\right)$, garantindo no mínimo 7 canais por operador disponível.
 - **CallerID:** [`randomizeCallerID`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L190) preserva DDD e varia os 4 dígitos finais.
 - **Injeção de Identidade e Áudio:**
   - `LEAD_NAME`: Nome original completo com acentos (`leads.name`, ex.: `"MARCIO NASCIMENTO"`), injetado no Asterisk e repassado aos headers SIP do LiveKit (`X-Lead-Name`), CRM e tela do operador.
@@ -123,9 +127,10 @@ sequenceDiagram
 - [`ReleaseSlot`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L156) & [`ReleaseByAsterisk`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L139): Desaloca canal de forma atômica no Hangup.
 
 ### 2.4. Triagem Ativa Full-Duplex e Atendimento
-- **PBX:** `[triagem-amd]` em [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf): Triagem Ativa Full-Duplex via [`EAGI`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) com reprodução imediata de áudio estruturado concatenado (`saudacao` + `work_words/${WORK_WORD}` + `falo_com` + `names/${AUDIO_NAME}`) e transcrição paralela no `FD 3` via Vosk STT (zero *dead air*, eliminação do AMD passivo).
-- **Humano:** [`PredictiveEngine.HandlePredictiveHuman`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L200). Com operador: define `AGENT_ROOM` e [`ami.Redirect`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L273) para `cos-all-custom` exten `9999`. Sem operador (abandono < 2s): `SetInflatedSuccessRate(30s)` e `ami.Hangup(Cause 16)`.
-- **Gravação de CDR:** No encerramento da chamada.
+- **PBX:** `[triagem-amd]` em [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf): Triagem Ativa Full-Duplex via [`EAGI`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) com reprodução imediata de áudio estruturado concatenado (`saudacao` + `work_words/${WORK_WORD}` + `falo_com` + `names/${AUDIO_NAME}`), disparo de `UserEvent(CallAnswered)` para registro determinístico de `answered_at`, e transcrição paralela no `FD 3` via Vosk STT (zero *dead air*, eliminação do AMD passivo).
+- **Humano:** [`PredictiveEngine.HandlePredictiveHuman`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L318). Com operador: define `AGENT_ROOM` e [`ami.Redirect`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L273) para `cos-all-custom` exten `9999`. Sem operador (abandono < 2s): `SetInflatedSuccessRate(30s)` e `ami.Hangup(Cause 16)`.
+- **Caixa Postal / Silêncio:** Ao detectar mensagem de operadora ou ausência total de resposta (`VOICEMAIL_SILENCE`), o Asterisk emite `UserEvent(PredictiveMachine)` e desliga (`Hangup 16`). O `TrunkManager` define `disposition = VOICEMAIL` em memória, assegurando persistência fidedigna no CDR e requebramento do lead para retentativa.
+- **Gravação de CDR:** No encerramento da chamada via `SaveCDR`, persistindo `initiated_at`, `answered_at`, `ended_at`, `duration_seconds`, `billsec_seconds`, `ring_seconds`, `recording_file` e `recording_url`.
 
 ---
 
@@ -220,19 +225,21 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
   - *Efetividade nos Dados:* Garante transição imediata para `DIALING`, incremento de `attempts_count` e timestamp `dialed_at`, impedindo que múltiplos motores de discagem peguem o mesmo lead.
 
 ### 7.2. Auditoria de Desfecho: Persistência ACID, CDR e Receptivo O(1)
-- **Função:** `fn_audit_persist_predictive_result(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, p_disposition, p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds, p_trunk_used, p_sip_route, p_max_attempts)`
+- **Função:** `fn_audit_persist_predictive_result(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, p_disposition, p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds, p_trunk_used, p_sip_route, p_max_attempts, p_recording_file, p_recording_url)`
 - **Auditoria de Resultados:**
-  1. **Escrita do CDR:** Grava em `cdrs` todos os tempos de tarifação e desfecho SIP/Q.850.
+  1. **Escrita do CDR:** Grava em `cdrs` todos os tempos de tarifação, desfecho SIP/Q.850 e os caminhos/URLs de áudio gravado (`recording_file`, `recording_url`).
   2. **Transição de Lead:** Sucesso (`DELIVERED`, `ANSWERED`, `INVALID_NUMBER`) ou limite de tentativas -> `COMPLETED`. Falha temporária (`VOICEMAIL`, `AMD_MACHINE`, `NO_ANSWER`, `BUSY`) -> `QUEUED`.
   3. **Receptivo O(1):** UPSERT na tabela `phone_trunk_mappings` (`last_trunk`, `last_project`, `last_sip_route`).
 - **Validação de Efetividade:**
   ```sql
   SELECT fn_audit_persist_predictive_result(
       'cdr-' || gen_random_uuid(), 'default', '3', '5511999998888', 101, 'agent-1',
-      'DELIVERED', 200, 16, 45, 30, 15, 'trunk-vivo', 'sala_agente_1', 5
+      'DELIVERED', 200, 16, 45, 30, 15, 'trunk-vivo', 'sala_agente_1', 5,
+      '/var/spool/asterisk/monitor/2026/09/14/063000-PRED-5511999998888-1.wav',
+      'https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-5511999998888-1.wav'
   );
   ```
-  - *Efetividade nos Dados:* Cobre 100% dos efeitos colaterais da finalização de chamadas preditivas em uma transação única. Para chamadas manuais, a auditoria valida a escrita direta em `cdrs` com `call_type = 'MANUAL'`.
+  - *Efetividade nos Dados:* Cobre 100% dos efeitos colaterais da finalização de chamadas preditivas em uma transação única. Para chamadas manuais, a auditoria valida a escrita direta em `cdrs` com `call_type = 'MANUAL'` e metadados de gravação.
 
 ### 7.3. Auditoria de Trilha de Execução (Trace via CorrelationID)
 - **Função:** `fn_audit_log_trace(p_correlation_id, p_step, p_status, p_message, p_tenant_id, p_campaign_id, ...)`
@@ -308,7 +315,11 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
 | **AMI Port** | `Redirect` | `(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int)` | `error` | Sim (Toggle) | Não |
 | **AMI Port** | `Hangup` | `(ctx context.Context, actionID, channel string, cause int)` | `error` | Sim (Toggle) | Não |
 | **Report HTTP** | `GetCallsSummary` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `CallsSummaryResponse`) | Sim (Toggle) | Não |
+| **Report HTTP** | `ListCDRs` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `CDRListResponse`) | Sim (Toggle) | Não |
+| **Report HTTP** | `GetCDR` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `CDR`) | Sim (Toggle) | Não |
 | **Report Repo** | `GetCallsSummary` | `(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string)` | `(*domain.CallsSummaryResponse, error)` | Não | Não |
+| **Report Repo** | `ListCDRs` | `(ctx context.Context, filter domain.CDRFilter)` | `(*domain.CDRListResponse, error)` | Não | Não |
+| **Report Repo** | `GetCDRByID` | `(ctx context.Context, tenantID, cdrID string)` | `(*domain.CDR, error)` | Não | Não |
 | **Report Repo** | `SaveCDR` | `(ctx context.Context, c *domain.CDR)` | `error` | Sim (Toggle) | **SIM** |
 | **DB Stored Proc** | `fn_audit_persist_predictive_result` | `(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, ...)` | `JSONB` | Sim (Toggle) | **SIM** |
 | **DB Stored Proc** | `fn_audit_claim_predictive_batch` | `(p_campaign_id, p_tenant_id, p_limit, p_cooldown_hours)` | `TABLE (lead_id, campaign_id, ...)` | Sim (Toggle) | Não |

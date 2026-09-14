@@ -24,10 +24,11 @@ services:
       - MINIO_BUCKET=mailings
       - MINIO_USE_SSL=false
       - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,37.60.228.113,*
-      - MAX_GLOBAL_CHANNELS=60
+      - MAX_GLOBAL_CHANNELS=120
       - HUMAN_RESERVED_QUOTA=10
-      - OMNICHAT_WEBHOOK_URL=http://server:3000/api/telephony/webhook/call-ended
-      - UPDATE_TIMESTAMP=1789355744
+      - MIN_CHANNELS_PER_AGENT=7
+      - RECORDINGS_BASE_URL=https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings
+      - UPDATE_TIMESTAMP=1789390689
     ports:
       - "8080:8080"
     deploy:

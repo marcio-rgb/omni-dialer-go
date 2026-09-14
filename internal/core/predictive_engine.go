@@ -17,23 +17,32 @@ import (
 )
 
 type PredictiveEngine struct {
-	ami           ports.AMIPort
-	channels      *ChannelManager
-	cache         ports.CachePort
-	campaigns     ports.CampaignRepository
-	trunks        ports.TrunkRepository
-	leads         ports.LeadRepository
-	roundRobinIdx uint64
+	ami                 ports.AMIPort
+	channels            *ChannelManager
+	cache               ports.CachePort
+	campaigns           ports.CampaignRepository
+	trunks              ports.TrunkRepository
+	leads               ports.LeadRepository
+	roundRobinIdx       uint64
+	minChannelsPerAgent int
 }
 
 func NewPredictiveEngine(ami ports.AMIPort, channels *ChannelManager, cache ports.CachePort, campaigns ports.CampaignRepository, trunks ports.TrunkRepository, leads ports.LeadRepository) *PredictiveEngine {
 	return &PredictiveEngine{
-		ami:       ami,
-		channels:  channels,
-		cache:     cache,
-		campaigns: campaigns,
-		trunks:    trunks,
-		leads:     leads,
+		ami:                 ami,
+		channels:            channels,
+		cache:               cache,
+		campaigns:           campaigns,
+		trunks:              trunks,
+		leads:               leads,
+		minChannelsPerAgent: 7,
+	}
+}
+
+// SetMinChannelsPerAgent configura o piso mínimo de canais simultâneos originados por usuário disponível.
+func (pe *PredictiveEngine) SetMinChannelsPerAgent(minChannels int) {
+	if minChannels > 0 {
+		pe.minChannelsPerAgent = minChannels
 	}
 }
 
@@ -46,6 +55,7 @@ func NewPredictiveEngine(ami ports.AMIPort, channels *ChannelManager, cache port
 // - Checagem de pausa da campanha em cache Redis (`IsCampaignPaused`)
 // - Filtragem do pool de troncos PJSIP elegíveis e saudáveis
 // - Cálculo de overdialing dinâmico baseado em agentes livres e agressividade
+// - Aplicação do piso mínimo de discagem por usuário disponível (mínimo de 7:1)
 //
 // @postExecution
 // - Alocação atômica de slots no `ChannelManager` respeitando `HumanReserveQuota`
@@ -135,10 +145,23 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 		aggressiveness = *req.Aggressiveness
 	}
 
-	// Fórmula canônica de overdialing:
+	// 3. Fórmula canônica de overdialing com piso mínimo por usuário disponível:
 	rawChannels := (float64(numAgents) / contactProbability) * (1.0 + (ringTime / talkTime)) * aggressiveness
 	calculatedDemand := int(math.Ceil(rawChannels))
-	log.Printf("[DEMAND] Campaign: %s, Agents: %d, Demand: %d, Pool: %d", req.CampaignID, numAgents, calculatedDemand, len(availablePool))
+
+	// Piso mínimo: discar no mínimo 7 canais/chamadas ("ramais") por usuário disponível
+	minRatio := pe.minChannelsPerAgent
+	if minRatio <= 0 {
+		minRatio = 7
+	}
+	if req.MinChannelsPerAgent != nil && *req.MinChannelsPerAgent > 0 {
+		minRatio = *req.MinChannelsPerAgent
+	}
+	minDemand := numAgents * minRatio
+	if calculatedDemand < minDemand {
+		calculatedDemand = minDemand
+	}
+	log.Printf("[DEMAND] Campaign: %s, Agents: %d, Demand: %d (min floor: %d, ratio: %d:1), Pool: %d", req.CampaignID, numAgents, calculatedDemand, minDemand, minRatio, len(availablePool))
 
 	// 4. Limita à capacidade disponível no ChannelManager distribuindo pelo Pool de Troncos
 	dispatched := 0
@@ -255,11 +278,11 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			leadIDStr = phone
 		}
 
-		audioName := leadItem.FirstName
+		audioName := domain.Slugify(leadItem.FirstName)
 		if audioName == "" {
 			audioName = domain.Slugify(leadItem.Name)
 		}
-		workWord := leadItem.WorkWord
+		workWord := domain.Slugify(leadItem.WorkWord)
 
 		vars := map[string]string{
 			"CALL_ID":       callID,

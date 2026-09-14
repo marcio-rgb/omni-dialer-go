@@ -66,13 +66,14 @@ func main() {
 	storageAdapter := storage.NewStorageAdapter(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
 
 	// 6. Core Engines & Arbitragem
-	webhookAdapter := webhook.NewWebhookClient(cfg.OmniChatWebhookURL)
-	callNotifier := core.NewCallNotifier(webhookAdapter, cfg.OmniChatWebhookURL)
+	webhookAdapter := webhook.NewWebhookClient(cfg.WebhookURL)
+	callNotifier := core.NewCallNotifier(webhookAdapter, cfg.WebhookURL)
 
 	channelMgr := core.NewChannelManager(cfg.MaxGlobalChannels, cfg.HumanReserveQuota, cache)
 	trunkMgr := core.NewTrunkManager(trunkRepo, cache, amiClient, channelMgr, reportRepo, routingRepo)
 	inboundEngine := core.NewInboundEngine(amiClient, routingRepo, channelMgr, "from-internal", "s")
 	predictiveEngine := core.NewPredictiveEngine(amiClient, channelMgr, cache, campaignRepo, trunkRepo, leadRepo)
+	predictiveEngine.SetMinChannelsPerAgent(cfg.MinChannelsPerAgent)
 	trunkMgr.SetEngines(predictiveEngine, inboundEngine)
 	trunkMgr.SetNotifier(callNotifier)
 	trunkMgr.StartDaemon(ctx)
@@ -99,7 +100,7 @@ func main() {
 	}
 
 	// 8. Gestão Dinâmica de AMD & Reconhecimento de Voz
-	amdConfigMgr := core.NewAMDConfigManager("./storage", "/opt/ominichat/asterisk/conf")
+	amdConfigMgr := core.NewAMDConfigManager("./storage", "")
 	amdHandler := httpAdapter.NewAMDHandler(amdConfigMgr, amiClient)
 	leadBatchHandler := httpAdapter.NewLeadBatchHandler(leadRepo, cache, audioWordMgr)
 
@@ -110,6 +111,7 @@ func main() {
 		WhitelistMiddleware: whitelist,
 		Predictive:          httpAdapter.NewPredictiveHandler(predictiveEngine),
 		Manual:              httpAdapter.NewManualHandler(manualEngine),
+		Campaign:            httpAdapter.NewCampaignHandler(campaignRepo, cache),
 		Refill:              httpAdapter.NewRefillHandler(mailingProcessor),
 		Toggle:              httpAdapter.NewToggleHandler(campaignRepo, cache),
 		Saturation:          httpAdapter.NewSaturationHandler(saturationService),

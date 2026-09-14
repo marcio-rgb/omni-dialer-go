@@ -28,6 +28,9 @@ type Config struct {
 	PacingInterval      time.Duration
 	MaxGlobalChannels   int
 	HumanReserveQuota   int
+	MinChannelsPerAgent int
+	WebhookURL          string
+	RecordingsBaseURL   string
 	OmniChatWebhookURL  string
 }
 
@@ -37,13 +40,22 @@ func Load() (*Config, error) {
 	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
 	amiPort, _ := strconv.Atoi(getEnv("ASTERISK_AMI_PORT", "5038"))
 	useSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
-	maxChannels, _ := strconv.Atoi(getEnv("MAX_GLOBAL_CHANNELS", "60"))
+	maxChannels, _ := strconv.Atoi(getEnv("MAX_GLOBAL_CHANNELS", "120"))
 	humanQuota, _ := strconv.Atoi(getEnv("HUMAN_RESERVED_QUOTA", "10"))
+	minChannelsPerAgent, _ := strconv.Atoi(getEnv("MIN_CHANNELS_PER_AGENT", "7"))
+	if minChannelsPerAgent <= 0 {
+		minChannelsPerAgent = 7
+	}
 
 	whitelistRaw := getEnv("INITIAL_WHITELIST_IPS", "127.0.0.1,::1")
 	whitelist := strings.Split(whitelistRaw, ",")
 	for i := range whitelist {
 		whitelist[i] = strings.TrimSpace(whitelist[i])
+	}
+
+	webhookURL := getEnv("WEBHOOK_URL", "")
+	if webhookURL == "" {
+		webhookURL = getEnv("OMNICHAT_WEBHOOK_URL", "")
 	}
 
 	cfg := &Config{
@@ -65,7 +77,10 @@ func Load() (*Config, error) {
 		PacingInterval:      time.Duration(1) * time.Second,
 		MaxGlobalChannels:   maxChannels,
 		HumanReserveQuota:   humanQuota,
-		OmniChatWebhookURL:  getEnv("OMNICHAT_WEBHOOK_URL", "http://server:3000/api/telephony/webhook/call-ended"),
+		MinChannelsPerAgent: minChannelsPerAgent,
+		WebhookURL:          webhookURL,
+		RecordingsBaseURL:   getEnv("RECORDINGS_BASE_URL", ""),
+		OmniChatWebhookURL:  webhookURL,
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -20,6 +20,7 @@ type HandlersConfig struct {
 	WhitelistMiddleware *IPWhitelistMiddleware
 	Predictive          *PredictiveHandler
 	Manual              *ManualHandler
+	Campaign            *CampaignHandler
 	Refill              *RefillHandler
 	Toggle              *ToggleHandler
 	Saturation          *SaturationHandler
@@ -56,8 +57,15 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 			// 2. Chamadas Manuais
 			api.Post("/calls/manual", handlers.Manual.DialManual)
 
-			// 3. Campanhas, Refill, Ingestão de Leads, Toggle & Saturação
+			// 3. Campanhas (CRUD), Refill, Ingestão de Leads, Toggle & Saturação
 			api.Route("/campaigns", func(camp chi.Router) {
+				if handlers.Campaign != nil {
+					camp.Get("/", handlers.Campaign.List)
+					camp.Post("/", handlers.Campaign.Create)
+					camp.Get("/{id}", handlers.Campaign.Get)
+					camp.Put("/{id}", handlers.Campaign.Update)
+					camp.Delete("/{id}", handlers.Campaign.Delete)
+				}
 				camp.Post("/refill", handlers.Refill.Refill)
 				if handlers.LeadBatch != nil {
 					camp.Post("/{campaign_id}/leads", handlers.LeadBatch.IngestBatch)
@@ -68,8 +76,11 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 				camp.Get("/{campaign_id}/saturation", handlers.Saturation.GetIndividual)
 			})
 
-			// 4. Relatório Analítico de Chamadas (com buffer de 15 min)
+			// 4. Relatório Analítico de Chamadas & CDRs Canônicos
 			api.Get("/reports/calls-summary", handlers.Report.GetCallsSummary)
+			api.Get("/reports/cdrs", handlers.Report.ListCDRs)
+			api.Get("/cdrs", handlers.Report.ListCDRs)
+			api.Get("/cdrs/{id}", handlers.Report.GetCDR)
 
 			// 5. Troncos SIP/PJSIP & Telemetria
 			api.Route("/trunks", func(trunks chi.Router) {
@@ -88,6 +99,9 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 					audio.Get("/preview", handlers.Audio.Preview)
 					audio.Post("/preview", handlers.Audio.Preview)
 				})
+				// 6.1. Streaming de Gravações Reais do Asterisk (MixMonitor)
+				api.Get("/recordings/*", handlers.Audio.ServeRecording)
+				api.Head("/recordings/*", handlers.Audio.ServeRecording)
 			}
 
 			// 7. Configuração Dinâmica de AMD & Hot-Reload Asterisk

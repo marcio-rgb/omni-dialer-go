@@ -36,7 +36,7 @@ func (p *ProblemDetails) WriteJSON(w http.ResponseWriter) {
 // Erros de Domínio Padronizados:
 func NewErrForbidden(detail string) *ProblemDetails {
 	return &ProblemDetails{
-		Type:   "https://api.ominichat.com/errors/forbidden",
+		Type:   "https://dialer-go.internal/errors/forbidden",
 		Title:  "Forbidden",
 		Status: http.StatusForbidden,
 		Detail: detail,
@@ -46,7 +46,7 @@ func NewErrForbidden(detail string) *ProblemDetails {
 
 func NewErrBadRequest(code, detail string, params ...InvalidParam) *ProblemDetails {
 	return &ProblemDetails{
-		Type:          "https://api.ominichat.com/errors/bad-request",
+		Type:          "https://dialer-go.internal/errors/bad-request",
 		Title:         "Bad Request",
 		Status:        http.StatusBadRequest,
 		Detail:        detail,
@@ -57,7 +57,7 @@ func NewErrBadRequest(code, detail string, params ...InvalidParam) *ProblemDetai
 
 func NewErrNotFound(code, detail string) *ProblemDetails {
 	return &ProblemDetails{
-		Type:   "https://api.ominichat.com/errors/not-found",
+		Type:   "https://dialer-go.internal/errors/not-found",
 		Title:  "Not Found",
 		Status: http.StatusNotFound,
 		Detail: detail,
@@ -67,7 +67,7 @@ func NewErrNotFound(code, detail string) *ProblemDetails {
 
 func NewErrConflict(code, detail string, meta map[string]interface{}) *ProblemDetails {
 	return &ProblemDetails{
-		Type:     "https://api.ominichat.com/errors/conflict",
+		Type:     "https://dialer-go.internal/errors/conflict",
 		Title:    "Conflict",
 		Status:   http.StatusConflict,
 		Detail:   detail,
@@ -78,7 +78,7 @@ func NewErrConflict(code, detail string, meta map[string]interface{}) *ProblemDe
 
 func NewErrUnprocessable(code, detail string, params ...InvalidParam) *ProblemDetails {
 	return &ProblemDetails{
-		Type:          "https://api.ominichat.com/errors/unprocessable-entity",
+		Type:          "https://dialer-go.internal/errors/unprocessable-entity",
 		Title:         "Unprocessable Entity",
 		Status:        http.StatusUnprocessableEntity,
 		Detail:        detail,
@@ -89,7 +89,7 @@ func NewErrUnprocessable(code, detail string, params ...InvalidParam) *ProblemDe
 
 func NewErrTooManyRequests(code, detail string, meta map[string]interface{}) *ProblemDetails {
 	return &ProblemDetails{
-		Type:     "https://api.ominichat.com/errors/too-many-requests",
+		Type:     "https://dialer-go.internal/errors/too-many-requests",
 		Title:    "Too Many Requests",
 		Status:   http.StatusTooManyRequests,
 		Detail:   detail,
@@ -100,7 +100,7 @@ func NewErrTooManyRequests(code, detail string, meta map[string]interface{}) *Pr
 
 func NewErrInternal(detail string) *ProblemDetails {
 	return &ProblemDetails{
-		Type:   "https://api.ominichat.com/errors/internal-server-error",
+		Type:   "https://dialer-go.internal/errors/internal-server-error",
 		Title:  "Internal Server Error",
 		Status: http.StatusInternalServerError,
 		Detail: detail,

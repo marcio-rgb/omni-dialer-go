@@ -50,7 +50,7 @@ func (r *LeadRepo) BatchInsert(ctx context.Context, leads []*domain.Lead) (int64
 		copyCount, err := r.pool.CopyFrom(
 			ctx,
 			pgx.Identifier{"leads"},
-			[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at", "name", "first_name", "work_word"},
+			[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at", "name", "first_name", "work_words"},
 			pgx.CopyFromRows(rows),
 		)
 		if err != nil {
@@ -70,7 +70,7 @@ func (r *LeadRepo) FetchNextFILOBatch(ctx context.Context, campaignID string, li
 	cooldownThreshold := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)
 
 	query := `
-		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at, COALESCE(name, '') as name, COALESCE(first_name, '') as first_name, COALESCE(work_word, '') as work_word
+		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at, COALESCE(name, '') as name, COALESCE(first_name, '') as first_name, COALESCE(work_words, '') as work_word
 		FROM leads
 		WHERE campaign_id = $1
 		  AND status IN ('NEW', 'QUEUED')

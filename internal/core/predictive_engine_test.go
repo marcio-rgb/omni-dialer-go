@@ -338,3 +338,140 @@ func TestPredictiveEngine_LeadNameOriginalAndAudioNameSlug(t *testing.T) {
 	}
 }
 
+func TestPredictiveEngine_MinChannelsPerAgentFloor(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-floor",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	// Cria 20 leads na fila
+	var leadBatch []string
+	for i := 1; i <= 20; i++ {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(leadJSON))
+	}
+
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Caso 1: 1 agente disponível -> Deve disparar no mínimo 7 chamadas (piso padrão)
+	req1 := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-floor",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+	resp1, err := engine.ProcessDemand(ctx, req1)
+	if err != nil {
+		t.Fatalf("ProcessDemand 1 agente falhou: %v", err)
+	}
+	if resp1.DialingChannels != 7 {
+		t.Fatalf("esperava piso de 7 canais disparados para 1 agente, obteve %d", resp1.DialingChannels)
+	}
+
+	// Caso 2: 2 agentes disponíveis -> Deve disparar no mínimo 14 chamadas (7 por agente)
+	// Recarrega leads na fila
+	cache.queue = leadBatch
+	req2 := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-floor",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+			{AgentID: "agent-2", SIPRoute: "sala_agente_2"},
+		},
+	}
+	resp2, err := engine.ProcessDemand(ctx, req2)
+	if err != nil {
+		t.Fatalf("ProcessDemand 2 agentes falhou: %v", err)
+	}
+	if resp2.DialingChannels != 14 {
+		t.Fatalf("esperava piso de 14 canais disparados para 2 agentes (7/agente), obteve %d", resp2.DialingChannels)
+	}
+}
+
+func TestPredictiveEngine_DynamicMinChannelsOverride(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-override",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	var leadBatch []string
+	for i := 1; i <= 20; i++ {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(leadJSON))
+	}
+
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Override dinâmico para 10 canais por agente no payload
+	minRatio10 := 10
+	req := &domain.PredictiveDemandRequest{
+		TenantID:            "tenant-test",
+		CampaignID:          "camp-override",
+		MinChannelsPerAgent: &minRatio10,
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand override falhou: %v", err)
+	}
+	if resp.DialingChannels != 10 {
+		t.Fatalf("esperava override de 10 canais disparados, obteve %d", resp.DialingChannels)
+	}
+}
+
+

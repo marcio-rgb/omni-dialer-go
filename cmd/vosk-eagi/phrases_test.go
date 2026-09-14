@@ -91,3 +91,66 @@ func TestLoadDynamicConfig(t *testing.T) {
 		t.Errorf("esperava 6.0, obteve %f", dur)
 	}
 }
+
+func TestClassifyOutcome_SilenceIsVoicemail(t *testing.T) {
+	silenceCases := []string{
+		"",
+		"   ",
+		"\t\n",
+	}
+
+	for _, tc := range silenceCases {
+		status, cause := ClassifyOutcome(tc, nil, nil)
+		if status != "MACHINE" {
+			t.Errorf("para silêncio %q, esperava status MACHINE, obteve %q", tc, status)
+		}
+		if cause != "VOICEMAIL_SILENCE" {
+			t.Errorf("para silêncio %q, esperava causa VOICEMAIL_SILENCE, obteve %q", tc, cause)
+		}
+	}
+}
+
+func TestClassifyOutcome_VoicemailPhrases(t *testing.T) {
+	cases := []struct {
+		input         string
+		expectedCause string
+	}{
+		{"deixe seu recado apos o sinal", "VOICEMAIL_DEIXE_RECADO"},
+		{"esta e a caixa postal da vivo", "VOICEMAIL_CAIXA_POSTAL"},
+		{"o numero chamado nao esta disponivel", "VOICEMAIL_NAO_ESTA_DISPONIVEL"},
+		{"alo deixe recado", "VOICEMAIL_DEIXE_RECADO"}, // Caixa postal tem precedência
+	}
+
+	for _, tc := range cases {
+		status, cause := ClassifyOutcome(tc.input, nil, nil)
+		if status != "MACHINE" {
+			t.Errorf("para %q, esperava status MACHINE, obteve %q", tc.input, status)
+		}
+		if !strings.HasPrefix(cause, "VOICEMAIL_") {
+			t.Errorf("para %q, esperava causa prefixada por VOICEMAIL_, obteve %q", tc.input, cause)
+		}
+	}
+}
+
+func TestClassifyOutcome_HumanSpeech(t *testing.T) {
+	cases := []struct {
+		input         string
+		expectedCause string
+	}{
+		{"alo", "HUMAN_ALO"},
+		{"opa bom dia", "HUMAN_OPA"},
+		{"sim com quem", "HUMAN_SIM"},
+		{"eu nao quero nada disso obrigado", "HUMAN_NATURAL_SPEECH"},
+	}
+
+	for _, tc := range cases {
+		status, cause := ClassifyOutcome(tc.input, nil, nil)
+		if status != "HUMAN" {
+			t.Errorf("para %q, esperava status HUMAN, obteve %q", tc.input, status)
+		}
+		if !strings.HasPrefix(cause, "HUMAN_") {
+			t.Errorf("para %q, esperava causa prefixada por HUMAN_, obteve %q", tc.input, cause)
+		}
+	}
+}
+

@@ -62,6 +62,66 @@ func ResolveHangupReason(disposition domain.CallDisposition, causeInt int, isAns
 	}
 }
 
+// DispatchCallEnded processa o término de qualquer chamada (MANUAL ou PREDICTIVE) e despacha webhook com a URL da gravação.
+func (cn *CallNotifier) DispatchCallEnded(activeChan *domain.ActiveChannel, disposition domain.CallDisposition, causeInt int, duration, billsec, ringSeconds int, recordingURL string) {
+	if cn == nil || cn.webhookClient == nil {
+		return
+	}
+	if activeChan == nil {
+		return
+	}
+
+	now := time.Now()
+	reason := ResolveHangupReason(disposition, causeInt, activeChan.IsAnswered)
+
+	eventName := "telephony.call_ended"
+	if activeChan.CallType == domain.CallTypeManual {
+		eventName = "telephony.manual_call_failed"
+		if activeChan.IsAnswered {
+			eventName = "telephony.manual_call_ended"
+		}
+	}
+
+	targetURL := cn.defaultURL
+	if activeChan.WebhookURL != nil && *activeChan.WebhookURL != "" {
+		targetURL = *activeChan.WebhookURL
+	}
+	if targetURL == "" {
+		return // Nenhuma URL de webhook configurada. Nada é direcionado para fora.
+	}
+
+	payload := &domain.CallEndedWebhookPayload{
+		Event:           eventName,
+		CallID:          activeChan.ChannelID,
+		CallType:        activeChan.CallType,
+		TenantID:        activeChan.TenantID,
+		AgentID:         activeChan.AgentID,
+		Phone:           activeChan.Phone,
+		TrunkUsed:       activeChan.TrunkID,
+		Disposition:     disposition,
+		HangupCause:     causeInt,
+		HangupReason:    reason,
+		IsAnswered:      activeChan.IsAnswered,
+		DurationSeconds: duration,
+		BillsecSeconds:  billsec,
+		RingSeconds:     ringSeconds,
+		StartedAt:       activeChan.StartedAt,
+		EndedAt:         now,
+		RecordingURL:    recordingURL,
+		Timestamp:       now.Unix(),
+	}
+
+	// Executa em goroutine sem bloquear o socket AMI ou a liberação de canais
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+
+		if err := cn.webhookClient.NotifyCallEnded(ctx, targetURL, payload); err != nil {
+			log.Printf("[WARN] [NOTIFIER] Erro ao notificar término da chamada %s (%s): %v", payload.CallID, payload.CallType, err)
+		}
+	}()
+}
+
 // DispatchManualHangup processa o término de uma chamada manual e envia webhook se houver falha ou encerramento.
 //
 // @pattern Strategy (Manual Call Notification)
@@ -91,6 +151,9 @@ func (cn *CallNotifier) DispatchManualHangup(activeChan *domain.ActiveChannel, d
 	targetURL := cn.defaultURL
 	if activeChan.WebhookURL != nil && *activeChan.WebhookURL != "" {
 		targetURL = *activeChan.WebhookURL
+	}
+	if targetURL == "" {
+		return // Nenhuma URL de webhook configurada. Nada é direcionado para fora.
 	}
 
 	payload := &domain.CallEndedWebhookPayload{

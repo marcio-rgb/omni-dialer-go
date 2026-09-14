@@ -113,3 +113,34 @@ func normalizeText(s string) string {
 	}
 	return strings.ToLower(strings.TrimSpace(res))
 }
+
+// ClassifyOutcome analisa o texto acumulado da chamada e determina o status e causa da triagem.
+// Silêncio (texto vazio) é rigorosamente classificado como MACHINE com causa VOICEMAIL_SILENCE.
+func ClassifyOutcome(fullText string, vmPhrases, greetings []string) (status, cause string) {
+	if len(vmPhrases) == 0 {
+		vmPhrases = voicemailPhrases
+	}
+	if len(greetings) == 0 {
+		greetings = humanGreetings
+	}
+
+	norm := normalizeText(fullText)
+	if norm == "" {
+		return "MACHINE", "VOICEMAIL_SILENCE"
+	}
+
+	for _, phrase := range vmPhrases {
+		if strings.Contains(norm, phrase) {
+			return "MACHINE", "VOICEMAIL_" + strings.ToUpper(strings.ReplaceAll(phrase, " ", "_"))
+		}
+	}
+
+	for _, greeting := range greetings {
+		if strings.Contains(norm, greeting) {
+			return "HUMAN", "HUMAN_" + strings.ToUpper(strings.ReplaceAll(greeting, " ", "_"))
+		}
+	}
+
+	return "HUMAN", "HUMAN_NATURAL_SPEECH"
+}
+

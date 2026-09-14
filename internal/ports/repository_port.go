@@ -33,6 +33,10 @@ type LeadRepository interface {
 type CampaignRepository interface {
 	GetByID(ctx context.Context, tenantID, campaignID string) (*domain.Campaign, error)
 	ListActive(ctx context.Context, tenantID string) ([]*domain.Campaign, error)
+	ListByTenant(ctx context.Context, tenantID string, status *domain.CampaignStatus) ([]*domain.Campaign, error)
+	Create(ctx context.Context, campaign *domain.Campaign) error
+	Update(ctx context.Context, campaign *domain.Campaign) error
+	Delete(ctx context.Context, tenantID, campaignID string) error
 	SetStatus(ctx context.Context, tenantID, campaignID string, status domain.CampaignStatus) (*domain.Campaign, error)
 	IncrementCycle(ctx context.Context, campaignID string) error
 }
@@ -40,4 +44,6 @@ type CampaignRepository interface {
 type ReportRepository interface {
 	SaveCDR(ctx context.Context, cdr *domain.CDR) error
 	GetCallsSummary(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string) (*domain.CallsSummaryResponse, error)
+	ListCDRs(ctx context.Context, filter domain.CDRFilter) (*domain.CDRListResponse, error)
+	GetCDRByID(ctx context.Context, tenantID, cdrID string) (*domain.CDR, error)
 }

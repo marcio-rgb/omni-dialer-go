@@ -52,6 +52,21 @@ func (m *mockCampaignRepo) IncrementCycle(ctx context.Context, campaignID string
 	m.camp.CycleCount++
 	return nil
 }
+func (m *mockCampaignRepo) ListByTenant(ctx context.Context, tenantID string, status *domain.CampaignStatus) ([]*domain.Campaign, error) {
+	return []*domain.Campaign{m.camp}, nil
+}
+func (m *mockCampaignRepo) Create(ctx context.Context, campaign *domain.Campaign) error {
+	m.camp = campaign
+	return nil
+}
+func (m *mockCampaignRepo) Update(ctx context.Context, campaign *domain.Campaign) error {
+	m.camp = campaign
+	return nil
+}
+func (m *mockCampaignRepo) Delete(ctx context.Context, tenantID, campaignID string) error {
+	m.camp = nil
+	return nil
+}
 
 func TestSaturationService_MetricsAndBurnRate(t *testing.T) {
 	ctx := context.Background()

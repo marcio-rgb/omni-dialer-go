@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	"dialer-go/internal/core"
 	"dialer-go/internal/domain"
@@ -123,4 +127,35 @@ func (h *AudioWordsHandler) Preview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", fileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(wavBytes)
+}
+
+// ServeRecording transmite o arquivo WAV gravado pelo Asterisk MixMonitor com suporte nativo a HTTP 206 Range.
+func (h *AudioWordsHandler) ServeRecording(w http.ResponseWriter, r *http.Request) {
+	relPath := chi.URLParam(r, "*")
+	if relPath == "" {
+		domain.NewErrBadRequest("MISSING_PATH", "Caminho da gravacao e obrigatorio").WriteJSON(w)
+		return
+	}
+
+	cleanRel := filepath.Clean(relPath)
+	if strings.HasPrefix(cleanRel, "..") {
+		domain.NewErrForbidden("Acesso a diretorio pai nao permitido").WriteJSON(w)
+		return
+	}
+
+	baseDir := os.Getenv("ASTERISK_MONITOR_DIR")
+	if baseDir == "" {
+		baseDir = "/var/spool/asterisk/monitor"
+	}
+
+	fullPath := filepath.Join(baseDir, cleanRel)
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil || fileInfo.IsDir() {
+		domain.NewErrNotFound("RECORDING_NOT_FOUND", fmt.Sprintf("Arquivo de gravacao '%s' nao encontrado", cleanRel)).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Accept-Ranges", "bytes")
+	http.ServeFile(w, r, fullPath)
 }

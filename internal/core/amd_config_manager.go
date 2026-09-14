@@ -38,7 +38,13 @@ func NewAMDConfigManager(storagePath, asteriskPath string) *AMDConfigManager {
 		storagePath = "./storage"
 	}
 	if asteriskPath == "" {
-		asteriskPath = "/opt/ominichat/asterisk/conf"
+		if envPath := os.Getenv("ASTERISK_CONF_DIR"); envPath != "" {
+			asteriskPath = envPath
+		} else if _, err := os.Stat("/opt/ominichat/asterisk/conf"); err == nil {
+			asteriskPath = "/opt/ominichat/asterisk/conf"
+		} else {
+			asteriskPath = "/etc/asterisk"
+		}
 	}
 
 	mgr := &AMDConfigManager{

@@ -14,7 +14,7 @@ import (
 	"dialer-go/internal/ports"
 )
 
-// WebhookClient implementa ports.WebhookPort enviando eventos de telefonia para o OmniChat via HTTP REST.
+// WebhookClient implementa ports.WebhookPort enviando eventos de telefonia para sistemas consumidores via HTTP REST.
 //
 // @pattern Adapter (HTTP Client)
 // @governedBy docs/rules/TELEPHONY_POLICIES.md#3-notificacoes-assincronas-e-webhooks
@@ -53,7 +53,7 @@ func (c *WebhookClient) NotifyCallEnded(ctx context.Context, webhookURL string, 
 		targetURL = c.defaultURL
 	}
 	if targetURL == "" {
-		return fmt.Errorf("nenhuma URL de webhook configurada para disparo")
+		return nil // Nenhuma URL de webhook configurada. Notificação desativada.
 	}
 
 	bodyBytes, err := json.Marshal(payload)

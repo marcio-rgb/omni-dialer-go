@@ -28,7 +28,7 @@ Este documento estabelece a especificação técnica exaustiva de todas as rotas
 Em caso de falha de validação, inexistência de recurso, saturação ou erro interno, o Dialer-Go responde com `Content-Type: application/problem+json`:
 ```json
 {
-  "type": "https://api.ominichat.com/errors/invalid-date-range",
+  "type": "https://dialer-go.internal/errors/invalid-date-range",
   "title": "Unprocessable Entity",
   "status": 422,
   "detail": "A data inicial "start_date" não pode ser posterior à data final "end_date".",
@@ -51,6 +51,11 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `GET` | `/health` | Diagnóstico de integridade (AMI, Postgres, Redis, Canais) | Sem bloqueio de IP |
 | `POST` | `/api/v1/predictive/demand` | Processa a demanda de agentes e calcula disparos preditivos | Whitelist + Body (`tenant_id`) |
 | `POST` | `/api/v1/calls/manual` | Origina chamada manual com prioridade preemptiva imediata | Whitelist + Body (`tenant_id`) |
+| `GET` | `/api/v1/campaigns` | Lista campanhas do tenant com filtro opcional por status | Whitelist + `X-Tenant-Id` / Query |
+| `GET` | `/api/v1/campaigns/{id}` | Recupera uma campanha específica por ID | Whitelist + `X-Tenant-Id` / Query |
+| `POST` | `/api/v1/campaigns` | Cria nova campanha no discador (modo, agressividade, tronco) | Whitelist + Body (`tenant_id`) |
+| `PUT` | `/api/v1/campaigns/{id}` | Atualiza configurações/agressividade de uma campanha | Whitelist + Body (`tenant_id`) |
+| `DELETE`| `/api/v1/campaigns/{id}` | Exclui uma campanha do sistema | Whitelist + `X-Tenant-Id` / Query |
 | `POST` | `/api/v1/campaigns/refill` | Ingestão em streaming de lote de mailing via ZIP do MinIO/S3 | Whitelist + Body (`tenant_id`) |
 | `POST` | `/api/v1/campaigns/{campaign_id}/leads` | Ingestão de leads em lote via JSON com síntese fonética | Whitelist + Body (`tenant_id`) |
 | `POST` | `/api/v1/campaigns/leads` | Ingestão de leads em lote via JSON (campanha no body) | Whitelist + Body (`tenant_id`) |
@@ -58,6 +63,8 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `GET` | `/api/v1/campaigns/{campaign_id}/saturation` | Consulta métricas de saturação e reciclagem FILO da campanha | Whitelist + `X-Tenant-Id` |
 | `GET` | `/api/v1/campaigns/saturation` | Retorna visão consolidada de saturação de todas as campanhas | Whitelist + `X-Tenant-Id` |
 | `GET` | `/api/v1/reports/calls-summary` | Estatísticas agregadas de chamadas com buffer Redis de 15 min | Whitelist + `X-Tenant-Id` / Query |
+| `GET` | `/api/v1/cdrs` | Listagem paginada de CDRs com metadados e URLs de áudio gravado | Whitelist + `X-Tenant-Id` / Query |
+| `GET` | `/api/v1/cdrs/{id}` | Consulta de CDR individual por ID com áudio gravado | Whitelist + `X-Tenant-Id` |
 | `GET` | `/api/v1/trunks` | Lista troncos com telemetria RTT e canais ativos em tempo real | Whitelist + `X-Tenant-Id` |
 | `POST` | `/api/v1/trunks` | Cadastra novo tronco telefônico com sincronização PBX Asterisk | Whitelist + Body (`tenant_id`) |
 | `PUT` | `/api/v1/trunks/{trunk_id}` | Atualiza parâmetros operacionais do tronco a quente | Whitelist + `X-Tenant-Id` |
@@ -116,6 +123,7 @@ Content-Type: application/json
 | `tenant_id` | `string` | **Sim** | Identificador multi-tenant da organização. |
 | `campaign_id` | `string` | **Sim** | Identificador da campanha cujos leads serão consumidos. |
 | `aggressiveness` | `float` | Não | Fator multiplicador de agressividade (default configurado na campanha). |
+| `min_channels_per_agent` | `integer` | Não | Piso mínimo de canais simultâneos por operador disponível (padrão: `7`, garantindo ratio mínimo de 7:1 para acelerar a discagem). |
 | `available_agents` | `array[object]` | **Sim** | Lista de atendentes humanos ou virtuais prontos para chamada. |
 | `available_agents[].agent_id` | `string` | **Sim** | Identificador do operador. |
 | `available_agents[].priority_order` | `integer` | Não | Ordem de prioridade de distribuição (default: 1). |
@@ -128,6 +136,7 @@ Content-Type: application/json
   "tenant_id": "org_alpha",
   "campaign_id": "camp_vendas_01",
   "aggressiveness": 1.4,
+  "min_channels_per_agent": 7,
   "available_agents": [
     {
       "agent_id": "usr_carlos_10",
@@ -151,7 +160,7 @@ Content-Type: application/json
   "success": true,
   "data": {
     "campaign_id": "camp_vendas_01",
-    "dialing_channels": 4,
+    "dialing_channels": 14,
     "status": "active"
   }
 }
@@ -208,6 +217,146 @@ Content-Type: application/json
 - **`400 Bad Request` (`MISSING_FIELDS`):** Campos obrigatórios ausentes.
 - **`404 Not Found` (`TRUNK_NOT_FOUND`):** Tronco especificado não existe ou está inativo.
 - **`429 Too Many Requests` (`TRUNK_CHANNELS_EXHAUSTED`):** Tronco atingiu limite `max_channels`.
+
+---
+
+### 3.3.1. Listar Campanhas (`GET /api/v1/campaigns`)
+Retorna todas as campanhas cadastradas para o tenant, com filtro opcional por status (`active`, `paused`, `exhausted`).
+
+#### A. Headers / Query Parameters:
+| Parâmetro | Tipo | Local | Obrigatório | Descrição |
+| :--- | :--- | :--- | :--- | :--- |
+| `X-Tenant-Id` | `string` | Header | Condicional | Identificador do tenant (ou via query param `tenant_id`). |
+| `tenant_id` | `string` | Query | Condicional | Identificador do tenant se não enviado no header. |
+| `status` | `string` | Query | Não | Filtro por status (`active`, `paused`, `exhausted`). |
+
+#### B. Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "camp_vendas_01",
+      "tenant_id": "org_alpha",
+      "name": "Campanha Cartão Consignado",
+      "mode": "PREDICTIVE",
+      "status": "active",
+      "aggressiveness": 1.20,
+      "trunk_name": "rvx",
+      "cycle_count": 0,
+      "saturation_level": "NOVA",
+      "created_at": "2026-09-14T08:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 3.3.2. Obter Campanha por ID (`GET /api/v1/campaigns/{id}`)
+Recupera uma campanha específica pelo seu identificador unívoco.
+
+#### A. Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "camp_vendas_01",
+    "tenant_id": "org_alpha",
+    "name": "Campanha Cartão Consignado",
+    "mode": "PREDICTIVE",
+    "status": "active",
+    "aggressiveness": 1.20,
+    "trunk_name": "rvx",
+    "cycle_count": 0,
+    "saturation_level": "NOVA",
+    "created_at": "2026-09-14T08:00:00Z"
+  }
+}
+```
+
+---
+
+### 3.3.3. Criar Campanha (`POST /api/v1/campaigns`)
+Cadastra uma nova campanha no discador com parametrização de modo, tronco e agressividade de discagem.
+
+#### A. Request Body:
+| Campo | Tipo | Obrigatório | Descrição / Regra |
+| :--- | :--- | :--- | :--- |
+| `tenant_id` | `string` | **Sim** | Identificador do tenant (ou via `X-Tenant-Id`). |
+| `id` | `string` | Não | ID personalizado (gera UUID v4 se omitido). |
+| `name` | `string` | Não | Nome descritivo da campanha. |
+| `mode` | `string` | Não | `PREDICTIVE` (padrão), `POWER` ou `MANUAL`. |
+| `status` | `string` | Não | `active` (padrão) ou `paused`. |
+| `aggressiveness` | `number` | Não | Fator multiplicador de pacing (padrão: 1.20). |
+| `trunk_name` | `string` | Não | Nome do tronco ou `auto` para balanceamento automático. |
+
+#### B. Resposta de Sucesso (`201 Created`):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "camp_vendas_01",
+    "tenant_id": "org_alpha",
+    "name": "Campanha Cartão Consignado",
+    "mode": "PREDICTIVE",
+    "status": "active",
+    "aggressiveness": 1.20,
+    "trunk_name": "auto",
+    "cycle_count": 0,
+    "saturation_level": "NOVA",
+    "created_at": "2026-09-14T08:25:00Z"
+  }
+}
+```
+
+---
+
+### 3.3.4. Atualizar Campanha (`PUT /api/v1/campaigns/{id}`)
+Atualiza configurações operacionais da campanha, incluindo nome, modo, agressividade e tronco.
+
+#### A. Request Body:
+| Campo | Tipo | Obrigatório | Descrição |
+| :--- | :--- | :--- | :--- |
+| `tenant_id` | `string` | **Sim** | Identificador do tenant (ou via `X-Tenant-Id`). |
+| `name` | `string` | Não | Novo nome da campanha. |
+| `mode` | `string` | Não | Novo modo operacional (`PREDICTIVE`, `POWER`, `MANUAL`). |
+| `status` | `string` | Não | Novo status (`active`, `paused`). Sincroniza com Redis. |
+| `aggressiveness` | `number` | Não | Novo fator de pacing (ex: 0.5, 1.0, 1.5). |
+| `trunk_name` | `string` | Não | Novo tronco selecionado. |
+
+#### B. Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "camp_vendas_01",
+    "tenant_id": "org_alpha",
+    "name": "Campanha Cartão Atualizada",
+    "mode": "PREDICTIVE",
+    "status": "active",
+    "aggressiveness": 1.00,
+    "trunk_name": "rvx",
+    "cycle_count": 0,
+    "saturation_level": "NOVA",
+    "created_at": "2026-09-14T08:25:00Z"
+  }
+}
+```
+
+---
+
+### 3.3.5. Excluir Campanha (`DELETE /api/v1/campaigns/{id}`)
+Remove uma campanha do banco relacional do discador.
+
+#### A. Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "message": "Campanha removida com sucesso",
+  "id": "camp_vendas_01"
+}
+```
 
 ---
 
@@ -466,6 +615,85 @@ Endpoint de alta performance protegido por uma camada de **Buffer de Cache no Re
       "ttl_remaining_seconds": 540,
       "buffer_duration_seconds": 900
     }
+  }
+}
+```
+
+---
+
+### 3.9.1. Listagem Paginada de CDRs (`GET /api/v1/cdrs` / `GET /api/v1/reports/cdrs`)
+Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminhos do Asterisk (`recording_file`) e URLs de streaming direto (`recording_url`) gerados pelo discador. Permite que serviços externos (como o Omnichat e dashboards) operem 100% desacoplados de bases internas.
+
+#### Parâmetros de Consulta (Query Params):
+| Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `string` | **Sim** | - | Identificador do locatário (ou via header `X-Tenant-Id`). |
+| `campaign_id`| `string` | Não | - | Filtra chamadas de uma campanha específica. |
+| `phone` | `string` | Não | - | Filtra chamadas por número de telefone. |
+| `disposition`| `string` | Não | - | Filtra por desfecho (`ANSWERED`, `DELIVERED`, `VOICEMAIL`, etc.). |
+| `start_date` | `ISO 8601`| Não | - | Filtro temporal inicial (`created_at >= start_date`). |
+| `end_date` | `ISO 8601`| Não | - | Filtro temporal final (`created_at <= end_date`). |
+| `page` | `integer` | Não | `1` | Número da página (mínimo: 1). |
+| `limit` | `integer` | Não | `20` | Quantidade de registros por página (máximo: 100). |
+
+#### Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "total_pages": 1,
+    "cdrs": [
+      {
+        "id": "cdr-chan-1726302600.12",
+        "tenant_id": "org_alpha",
+        "campaign_id": "camp-99",
+        "phone": "11999998888",
+        "agent_id": "user-42",
+        "call_type": "PREDICTIVE",
+        "disposition": "ANSWERED",
+        "sip_status": 200,
+        "hangup_cause": 16,
+        "duration_seconds": 45,
+        "billsec_seconds": 40,
+        "ring_seconds": 5,
+        "trunk_used": "trunk-pjsip-01",
+        "recording_file": "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+        "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+        "created_at": "2026-09-14T06:30:00Z",
+        "initiated_at": "2026-09-14T06:30:00Z",
+        "answered_at": "2026-09-14T06:30:05Z",
+        "ended_at": "2026-09-14T06:30:45Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 3.9.2. Consulta de CDR por Identificador (`GET /api/v1/cdrs/{id}`)
+Recupera o registro canônico de uma chamada individual através do seu identificador de canal / CDR ID.
+
+#### Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "cdr-chan-1726302600.12",
+    "tenant_id": "org_alpha",
+    "phone": "11999998888",
+    "call_type": "PREDICTIVE",
+    "disposition": "ANSWERED",
+    "duration_seconds": 45,
+    "billsec_seconds": 40,
+    "ring_seconds": 5,
+    "trunk_used": "trunk-pjsip-01",
+    "recording_file": "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+    "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+    "created_at": "2026-09-14T06:30:00Z"
   }
 }
 ```
@@ -833,17 +1061,20 @@ Executa o comando `module reload app_amd.so` no PBX Asterisk via AMI.
 
 ---
 
-## 4. Webhooks e Integração Egress com o OmniChat Core
+## 4. Webhooks Opcionais de Notificação (Egress)
+
+Por padrão, o **Dialer-Go** opera de forma 100% autônoma e passiva através de suas APIs REST canônicas (`GET /api/v1/cdrs`, `GET /api/v1/reports/calls-summary`), **não direcionando nenhuma chamada nem webhook para sistemas externos**.
+
+Caso o sistema cliente deseje receber notificações ativas (push) de término de chamada, pode fornecer a URL via requisição (`webhook_url` na chamada manual) ou configurar a variável opcional de ambiente `WEBHOOK_URL`. Se nenhuma URL for definida, nenhuma requisição HTTP externa é disparada.
 
 ---
 
-### 4.1. Webhook Notificador de Término de Chamada (`POST /api/telephony/webhook/call-ended`)
-Disparado pelo componente `WebhookClient` do **Dialer-Go** para o **OmniChat Core** imediatamente após a liberação da chamada telefônica.
+### 4.1. Webhook Notificador de Término de Chamada (Opcional)
+Disparado pelo componente `WebhookClient` do **Dialer-Go** imediatamente após a liberação da chamada telefônica, apenas quando houver URL de webhook explicitamente informada ou configurada.
 
 #### A. Cabeçalhos HTTP Enviados:
 ```http
-POST /api/telephony/webhook/call-ended HTTP/1.1
-Host: api.ominichat.com
+POST {webhook_url} HTTP/1.1
 Content-Type: application/json
 X-Tenant-Id: <tenant_id>
 User-Agent: DialerGo-WebhookNotifier/1.0
@@ -859,7 +1090,7 @@ User-Agent: DialerGo-WebhookNotifier/1.0
 | `agent_id` | `string / null` | Identificador do operador caso a chamada tenha sido atendida. |
 | `phone` | `string` | Telefone discado preservado sem truncamento. |
 | `trunk_used` | `string` | Identificador do tronco SIP utilizado. |
-| `disposition` | `string` | Desfecho: `"ANSWERED"`, `"NOANSWER"`, `"BUSY"`, `"FAILED"`, `"VOICEMAIL"`, `"ABANDONED"`. |
+| `disposition` | `string` | Desfecho: `"ANSWERED"`, `"NO_ANSWER"`, `"BUSY"`, `"FAILED"`, `"VOICEMAIL"`, `"ABANDONED"`. |
 | `hangup_cause` | `integer` | Código de causa Q.850 / ISDN do encerramento (ex: 16 = Normal, 17 = Ocupado). |
 | `hangup_reason` | `string` | Descrição textual da causa da finalização. |
 | `is_answered` | `boolean` | `true` se houve atendimento humano confirmado pelo AMD. |
@@ -868,66 +1099,30 @@ User-Agent: DialerGo-WebhookNotifier/1.0
 | `ring_seconds` | `integer` | Tempo em segundos de toque (chamando) antes do atendimento/queda. |
 | `started_at` | `ISO 8601` | Timestamp do início da tentativa. |
 | `ended_at` | `ISO 8601` | Timestamp do desligamento da perna. |
+| `recording_url` | `string` | URL pública de streaming/download da gravação. |
 | `timestamp` | `integer` | Unix timestamp em segundos do momento do disparo. |
 
 ##### Exemplo de Payload Enviado:
 ```json
 {
   "event": "telephony.call_ended",
-  "call_id": "call-9b8c7d6e-5f4a-3b2c-1d0e-9f8a7b6c5d4e",
-  "call_type": "predictive",
-  "tenant_id": "org_alpha",
-  "agent_id": "usr_carlos_10",
+  "call_id": "manual-1726302600.12",
+  "call_type": "MANUAL",
+  "tenant_id": "tenant-empresa-1",
+  "agent_id": "op-101",
   "phone": "11999998888",
-  "trunk_used": "trunk_vivo_e1",
+  "trunk_used": "trunk-vivo-01",
   "disposition": "ANSWERED",
   "hangup_cause": 16,
-  "hangup_reason": "Normal Clearing",
+  "hangup_reason": "Chamada Atendida e Encerrada",
   "is_answered": true,
   "duration_seconds": 64,
   "billsec_seconds": 58,
   "ring_seconds": 6,
   "started_at": "2026-09-14T02:15:00Z",
   "ended_at": "2026-09-14T02:16:04Z",
+  "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-MAN-11999998888-1.wav",
   "timestamp": 1789352164
-}
-```
-
----
-
-### 4.2. Modelo Pull de Reabastecimento Reativo (`POST /api/dialer/refill`)
-Disponibilizado no **OmniChat Core** e consumido sob demanda pelo **Dialer-Go** quando a fila do Redis fica abaixo do limiar crítico (`buffer_low`).
-
-#### A. Request Body:
-```json
-{
-  "campaign_id": 42,
-  "campaign_ids": [42, 43],
-  "limit": 100
-}
-```
-
-#### B. Resposta do OmniChat Core (`200 OK`):
-```json
-{
-  "success": true,
-  "count": 2,
-  "leads": [
-    {
-      "id": 100234,
-      "name": "João da Silva",
-      "phone": "11988887777",
-      "campaign_id": 42,
-      "extra_data": { "convenio": "inss", "matricula": "99210" }
-    },
-    {
-      "id": 100235,
-      "name": "Ana Paula de Souza",
-      "phone": "21977776666",
-      "campaign_id": 42,
-      "extra_data": { "convenio": "siape", "matricula": "88120" }
-    }
-  ]
 }
 ```
 

@@ -54,6 +54,7 @@ func NewConnectionPool(ctx context.Context, connString string) (*pgxpool.Pool, e
 			cancel()
 
 			if pingErr == nil {
+				autoMigrate(ctx, pool)
 				return pool, nil
 			}
 			pool.Close()
@@ -68,4 +69,18 @@ func NewConnectionPool(ctx context.Context, connString string) (*pgxpool.Pool, e
 	}
 
 	return nil, fmt.Errorf("falha ao conectar no banco dialer_db após %d tentativas: %w", maxAttempts, lastErr)
+}
+
+// autoMigrate garante de forma idempotente que colunas essenciais existam sem exigir migrações manuais.
+func autoMigrate(ctx context.Context, pool *pgxpool.Pool) {
+	migrateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	queries := []string{
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_file VARCHAR(512);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_url VARCHAR(512);`,
+	}
+	for _, q := range queries {
+		_, _ = pool.Exec(migrateCtx, q)
+	}
 }

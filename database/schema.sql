@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS cdrs (
     billsec_seconds INTEGER NOT NULL DEFAULT 0,
     ring_seconds INTEGER NOT NULL DEFAULT 0,
     trunk_used VARCHAR(64) NOT NULL,
+    recording_file VARCHAR(512),
+    recording_url VARCHAR(512),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     initiated_at TIMESTAMP WITH TIME ZONE,
     answered_at TIMESTAMP WITH TIME ZONE,
@@ -183,7 +185,9 @@ CREATE OR REPLACE FUNCTION fn_audit_persist_predictive_result(
     p_ring_seconds INTEGER,
     p_trunk_used VARCHAR(64),
     p_sip_route VARCHAR(128) DEFAULT NULL,
-    p_max_attempts INTEGER DEFAULT 5
+    p_max_attempts INTEGER DEFAULT 5,
+    p_recording_file VARCHAR(512) DEFAULT NULL,
+    p_recording_url VARCHAR(512) DEFAULT NULL
 ) RETURNS JSONB AS $$
 DECLARE
     v_target_lead_id BIGINT := p_lead_id;
@@ -217,11 +221,11 @@ BEGIN
     INSERT INTO cdrs (
         id, tenant_id, campaign_id, phone, agent_id, call_type, disposition,
         sip_status, hangup_cause, duration_seconds, billsec_seconds, ring_seconds,
-        trunk_used, created_at, initiated_at, answered_at, ended_at
+        trunk_used, recording_file, recording_url, created_at, initiated_at, answered_at, ended_at
     ) VALUES (
         p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_agent_id, 'PREDICTIVE', p_disposition,
         p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds,
-        p_trunk_used, CURRENT_TIMESTAMP, 
+        p_trunk_used, p_recording_file, p_recording_url, CURRENT_TIMESTAMP, 
         CURRENT_TIMESTAMP - (p_duration_seconds || ' seconds')::INTERVAL,
         CASE WHEN p_billsec_seconds > 0 THEN CURRENT_TIMESTAMP - (p_billsec_seconds || ' seconds')::INTERVAL ELSE NULL END,
         CURRENT_TIMESTAMP

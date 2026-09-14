@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"dialer-go/internal/domain"
 	"dialer-go/internal/ports"
@@ -168,15 +169,51 @@ func (cm *ChannelManager) AssignAgent(callID, agentID string) {
 	if callID == "" || agentID == "" {
 		return
 	}
+	now := time.Now()
 	cm.chanMu.Lock()
 	ch, exists := cm.activeChannels[callID]
 	if exists {
 		wasHuman := ch.CallType == domain.CallTypeManual || ch.AgentID != nil
 		ch.AgentID = &agentID
 		ch.IsAnswered = true
+		if ch.AnsweredAt == nil {
+			ch.AnsweredAt = &now
+		}
 		if !wasHuman {
 			cm.activeHumanCalls.Add(1)
 		}
+	}
+	cm.chanMu.Unlock()
+}
+
+// MarkAnswered define o canal como atendido e crava o timestamp de atendimento pontual.
+func (cm *ChannelManager) MarkAnswered(astChannel, uniqueID string, answeredAt time.Time) {
+	callID := cm.GetCallIDByAsterisk(astChannel, uniqueID)
+	if callID == "" {
+		return
+	}
+	cm.chanMu.Lock()
+	defer cm.chanMu.Unlock()
+	if ch, exists := cm.activeChannels[callID]; exists {
+		ch.IsAnswered = true
+		if ch.AnsweredAt == nil {
+			ch.AnsweredAt = &answeredAt
+		}
+	}
+}
+
+// SetRecordingFile armazena o caminho do arquivo gerado pelo MixMonitor no canal ativo.
+func (cm *ChannelManager) SetRecordingFile(astChannel, uniqueID, recordingFile string) {
+	if recordingFile == "" {
+		return
+	}
+	callID := cm.GetCallIDByAsterisk(astChannel, uniqueID)
+	if callID == "" {
+		return
+	}
+	cm.chanMu.Lock()
+	if ch, exists := cm.activeChannels[callID]; exists {
+		ch.RecordingFile = recordingFile
 	}
 	cm.chanMu.Unlock()
 }

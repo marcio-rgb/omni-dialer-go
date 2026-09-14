@@ -56,3 +56,24 @@ Toda e qualquer alteração, adição, remoção ou refatoração nos endpoints 
    - Exemplos reais de JSON Response de Sucesso (`200 OK`, `201 Created`, etc.).
    - Catálogo de erros mapeados no padrão Problem Details (RFC 7807) com códigos de status (`400`, `404`, `422`, `429`, `500`), códigos internos (`INVALID_JSON`, `TRUNK_NOT_FOUND`, etc.) e causas prováveis.
 3. **Proibição de Descompasso:** É terminantemente proibido publicar código ou finalizar tarefas com endpoints sem documentação ou com discrepâncias entre as structs do Go e o catálogo da API.
+
+---
+
+## 4. Cláusula Pétrea: Desacoplamento Total e Autonomia Absoluta do Dialer-Go
+
+> [!CAUTION]
+> **REGRA INVIOLÁVEL DE ARQUITETURA:**
+> O **Dialer-Go** é um motor de telefonia **100% autônomo, agnóstico e soberano**. Ele **NÃO** é um módulo dependente do OmniChat, não reside no sistema OmniChat e **NUNCA** deve ser acoplado a estruturas, bancos ou legados daquela plataforma.
+
+### Diretrizes Pétreas de Autonomia:
+1. **Proibição Absoluta de Acesso ou Delegação ao Legado (`call_history`, etc.):**
+   - É terminantemente proibido ler, gravar, delegar persistência ou modelar regras de negócio esperando que tabelas do OmniChat (como `call_history`, `calls`, `contacts` ou `Lead`) supram dados ou funcionalidades do discador.
+   - O Dialer-Go possui e gerencia seu próprio banco relacional isolado (**`dialer_db`**), mantendo soberania sobre `cdrs`, `leads`, `campaigns`, `trunks`, `phone_trunk_mappings` e `execution_traces`.
+   - **Toda e qualquer informação de chamada — incluindo metadados de tarifação, desfechos e os caminhos/URLs de áudio gravado (`recording_file` e `recording_url`) — DEVE ser armazenada na tabela `cdrs` do Dialer-Go.**
+2. **Sistema Preparado para Atender Qualquer Plataforma Externa:**
+   - O Dialer-Go foi projetado para interoperar com qualquer ecossistema cliente (OmniChat, CRMs externos, discadores web, bots ou plataformas de IA).
+   - A interface entre o Dialer-Go e qualquer sistema consumidor ocorre **exclusivamente através de contratos de API REST padronizados (RFC 7807)** e **Webhooks tipados de saída**.
+   - Qualquer consumidor que necessite de histórico de chamadas ou gravações de áudio deve requisitar via API canônica do Dialer-Go (`GET /api/v1/cdrs`, `GET /api/v1/cdrs/{id}`, `GET /api/v1/recordings/*`, `GET /api/v1/reports/calls-summary`).
+3. **Proibição de Suposições ou Acoplamentos Ocultos:**
+   - Nenhuma decisão técnica ou omissão no discador pode ser justificada sob o pretexto de que *"o OmniChat já guarda isso"* ou *"o OmniChat resolve isso no webhook"*.
+   - O Dialer-Go deve funcionar de ponta a ponta com plenitude funcional e auditabilidade mesmo que o OmniChat não exista ou seja substituído por outro sistema.

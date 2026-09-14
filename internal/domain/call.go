@@ -40,6 +40,8 @@ type CDR struct {
 	BillsecSeconds  int             `json:"billsec_seconds"`
 	RingSeconds     int             `json:"ring_seconds"`
 	TrunkUsed       string          `json:"trunk_used"`
+	RecordingFile   *string         `json:"recording_file,omitempty"`
+	RecordingURL    *string         `json:"recording_url,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	InitiatedAt     *time.Time      `json:"initiated_at,omitempty"`
 	AnsweredAt      *time.Time      `json:"answered_at,omitempty"`
@@ -57,9 +59,11 @@ type ActiveChannel struct {
 	AgentID     *string          `json:"agent_id,omitempty"`
 	SIPRoute    *string          `json:"sip_route,omitempty"`
 	WebhookURL  *string          `json:"webhook_url,omitempty"`
-	StartedAt   time.Time        `json:"started_at"`
-	IsAnswered  bool             `json:"is_answered"`
-	Disposition *CallDisposition `json:"disposition,omitempty"`
+	StartedAt     time.Time        `json:"started_at"`
+	AnsweredAt    *time.Time       `json:"answered_at,omitempty"`
+	IsAnswered    bool             `json:"is_answered"`
+	Disposition   *CallDisposition `json:"disposition,omitempty"`
+	RecordingFile string           `json:"recording_file,omitempty"`
 }
 
 // PhoneTrunkMapping representa o vínculo O(1) de último tronco para chamadas receptivas.
@@ -118,6 +122,7 @@ type CallEndedWebhookPayload struct {
 	RingSeconds     int             `json:"ring_seconds"`
 	StartedAt       time.Time       `json:"started_at"`
 	EndedAt         time.Time       `json:"ended_at"`
+	RecordingURL    string          `json:"recording_url,omitempty"`
 	Timestamp       int64           `json:"timestamp"`
 }
 
@@ -129,14 +134,36 @@ type AgentDemandDTO struct {
 }
 
 type PredictiveDemandRequest struct {
-	TenantID        string           `json:"tenant_id"`
-	CampaignID      string           `json:"campaign_id"`
-	Aggressiveness  *float64         `json:"aggressiveness,omitempty"`
-	AvailableAgents []AgentDemandDTO `json:"available_agents"`
+	TenantID            string           `json:"tenant_id"`
+	CampaignID          string           `json:"campaign_id"`
+	Aggressiveness      *float64         `json:"aggressiveness,omitempty"`
+	MinChannelsPerAgent *int             `json:"min_channels_per_agent,omitempty"`
+	AvailableAgents     []AgentDemandDTO `json:"available_agents"`
 }
 
 type PredictiveDemandResponse struct {
 	CampaignID      string `json:"campaign_id"`
 	DialingChannels int    `json:"dialing_channels"`
 	Status          string `json:"status"`
+}
+
+// CDRFilter define os parâmetros de busca e paginação para consulta de CDRs.
+type CDRFilter struct {
+	TenantID    string
+	CampaignID  *string
+	Phone       *string
+	Disposition *CallDisposition
+	StartDate   *time.Time
+	EndDate     *time.Time
+	Page        int
+	Limit       int
+}
+
+// CDRListResponse representa a lista paginada de CDRs retornada pela API.
+type CDRListResponse struct {
+	Total      int64  `json:"total"`
+	Page       int    `json:"page"`
+	Limit      int    `json:"limit"`
+	TotalPages int    `json:"total_pages"`
+	CDRs       []*CDR `json:"cdrs"`
 }

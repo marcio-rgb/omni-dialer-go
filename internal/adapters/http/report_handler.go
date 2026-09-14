@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"dialer-go/internal/domain"
 	"dialer-go/internal/ports"
+	"github.com/go-chi/chi/v5"
 )
 
 type ReportHandler struct {
@@ -159,5 +161,144 @@ func (h *ReportHandler) GetCallsSummary(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    freshData,
+	})
+}
+
+// ListCDRs lista registros detalhados de CDR com paginação e filtros operacionais.
+//
+// @pattern Adapter (HTTP Handler / REST Collection)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#cdr-queries
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de `tenant_id` obrigatório (query param ou header X-Tenant-Id)
+// - Sanitização de paginação (page >= 1, 1 <= limit <= 100)
+//
+// @postExecution
+// - Consulta paginada no PostgreSQL com ordenação decrescente por created_at
+// - Resposta em formato RFC 7807 em caso de erro ou payload consolidado
+func (h *ReportHandler) ListCDRs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// 1. Tenant ID obrigatório
+	tenantID := r.URL.Query().Get("tenant_id")
+	if tenantID == "" {
+		tenantID = r.Header.Get("X-Tenant-Id")
+	}
+	if tenantID == "" {
+		domain.NewErrBadRequest("MISSING_TENANT_ID",
+			"O parâmetro obrigatório 'tenant_id' não foi informado via query parameter (?tenant_id=...) nem via header HTTP (X-Tenant-Id).").WriteJSON(w)
+		return
+	}
+
+	filter := domain.CDRFilter{
+		TenantID: tenantID,
+		Page:     1,
+		Limit:    20,
+	}
+
+	// 2. Paginação
+	if pStr := r.URL.Query().Get("page"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p >= 1 {
+			filter.Page = p
+		}
+	}
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l >= 1 {
+			if l > 100 {
+				l = 100
+			}
+			filter.Limit = l
+		}
+	}
+
+	// 3. Filtros opcionais
+	if campID := r.URL.Query().Get("campaign_id"); campID != "" {
+		filter.CampaignID = &campID
+	}
+	if phone := r.URL.Query().Get("phone"); phone != "" {
+		filter.Phone = &phone
+	}
+	if disp := r.URL.Query().Get("disposition"); disp != "" {
+		d := domain.CallDisposition(disp)
+		filter.Disposition = &d
+	}
+
+	if startStr := r.URL.Query().Get("start_date"); startStr != "" {
+		if st, err := time.Parse(time.RFC3339, startStr); err == nil {
+			filter.StartDate = &st
+		} else {
+			domain.NewErrUnprocessable("INVALID_DATE_FORMAT",
+				"O formato de 'start_date' deve ser ISO 8601 UTC (ex: 2026-09-09T00:00:00Z)",
+				domain.InvalidParam{Name: "start_date", Reason: "formato inválido"}).WriteJSON(w)
+			return
+		}
+	}
+	if endStr := r.URL.Query().Get("end_date"); endStr != "" {
+		if et, err := time.Parse(time.RFC3339, endStr); err == nil {
+			filter.EndDate = &et
+		} else {
+			domain.NewErrUnprocessable("INVALID_DATE_FORMAT",
+				"O formato de 'end_date' deve ser ISO 8601 UTC (ex: 2026-09-09T06:30:00Z)",
+				domain.InvalidParam{Name: "end_date", Reason: "formato inválido"}).WriteJSON(w)
+			return
+		}
+	}
+
+	if filter.StartDate != nil && filter.EndDate != nil && filter.StartDate.After(*filter.EndDate) {
+		domain.NewErrUnprocessable("INVALID_DATE_RANGE",
+			"A data inicial 'start_date' não pode ser posterior à data final 'end_date'.",
+			domain.InvalidParam{Name: "start_date", Reason: "posterior a end_date"}).WriteJSON(w)
+		return
+	}
+
+	// 4. Executa listagem
+	res, err := h.repo.ListCDRs(ctx, filter)
+	if err != nil {
+		domain.NewErrInternal(fmt.Sprintf("Falha ao consultar CDRs: %s", err.Error())).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"data":    res,
+	})
+}
+
+// GetCDR obtém os detalhes de um CDR específico por ID.
+//
+// @pattern Adapter (HTTP Handler / REST Resource)
+func (h *ReportHandler) GetCDR(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantID := r.URL.Query().Get("tenant_id")
+	if tenantID == "" {
+		tenantID = r.Header.Get("X-Tenant-Id")
+	}
+	if tenantID == "" {
+		domain.NewErrBadRequest("MISSING_TENANT_ID",
+			"O parâmetro obrigatório 'tenant_id' não foi informado via query parameter nem via header HTTP.").WriteJSON(w)
+		return
+	}
+
+	cdrID := chi.URLParam(r, "id")
+	if cdrID == "" {
+		domain.NewErrBadRequest("MISSING_CDR_ID", "O identificador 'id' do CDR é obrigatório na URL.").WriteJSON(w)
+		return
+	}
+
+	cdr, err := h.repo.GetCDRByID(ctx, tenantID, cdrID)
+	if err != nil {
+		domain.NewErrNotFound("CDR_NOT_FOUND", fmt.Sprintf("Registro de CDR '%s' não encontrado.", cdrID)).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"data":    cdr,
 	})
 }

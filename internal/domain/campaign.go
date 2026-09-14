@@ -89,3 +89,34 @@ type TenantSaturationOverview struct {
 	RefillUrgentCount int                      `json:"refill_urgent_count"`
 	Campaigns         []CampaignSaturationData `json:"campaigns"`
 }
+
+// DTOs para CRUD de Campanhas
+type CreateCampaignRequest struct {
+	ID             string          `json:"id,omitempty"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Name           string          `json:"name,omitempty"`
+	Mode           CampaignMode    `json:"mode,omitempty"`
+	Status         CampaignStatus  `json:"status,omitempty"`
+	Aggressiveness float64         `json:"aggressiveness,omitempty"`
+	TrunkName      string          `json:"trunk_name,omitempty"`
+}
+
+type UpdateCampaignRequest struct {
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Name           *string         `json:"name,omitempty"`
+	Mode           *CampaignMode   `json:"mode,omitempty"`
+	Status         *CampaignStatus `json:"status,omitempty"`
+	Aggressiveness *float64        `json:"aggressiveness,omitempty"`
+	TrunkName      *string         `json:"trunk_name,omitempty"`
+}
+
+type CampaignResponse struct {
+	Success bool      `json:"success"`
+	Data    *Campaign `json:"data"`
+}
+
+type CampaignListResponse struct {
+	Success bool        `json:"success"`
+	Data    []*Campaign `json:"data"`
+}
+

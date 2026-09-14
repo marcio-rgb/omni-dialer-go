@@ -75,14 +75,16 @@ graph TD
 ## 3. Catálogo de Entidades e DTOs (`internal/domain/`)
 
 ### 3.1. Chamadas e Telefonia ([`call.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/call.go))
-- `CDR`: Histórico de tarifação persistido em PostgreSQL.
-  - Campos: `ID` (string), `TenantID` (string), `CampaignID` (*string), `Phone` (string), `AgentID` (*string), `CallType` (`CallType`), `Disposition` (`CallDisposition`), `SIPStatus` (*int), `HangupCause` (*int), `DurationSeconds` (int), `BillsecSeconds` (int), `RingSeconds` (int), `TrunkUsed` (string), `CreatedAt`, `InitiatedAt`, `AnsweredAt`, `EndedAt` (*time.Time).
-- `ActiveChannel`: Estado volátil de chamada em conversação ou discagem.
-  - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `WebhookURL`, `StartedAt`, `IsAnswered`, `Disposition`.
+- `CDR`: Histórico de tarifação e gravação persistido em PostgreSQL (`dialer_db`).
+  - Campos: `ID` (string), `TenantID` (string), `CampaignID` (*string), `Phone` (string), `AgentID` (*string), `CallType` (`CallType`), `Disposition` (`CallDisposition`), `SIPStatus` (*int), `HangupCause` (*int), `DurationSeconds` (int), `BillsecSeconds` (int), `RingSeconds` (int), `TrunkUsed` (string), `RecordingFile` (*string), `RecordingURL` (*string), `CreatedAt`, `InitiatedAt`, `AnsweredAt`, `EndedAt` (*time.Time).
+- `CDRFilter`: Parâmetros de busca paginada e filtros operacionais (`TenantID`, `CampaignID`, `Phone`, `Disposition`, `StartDate`, `EndDate`, `Page`, `Limit`).
+- `CDRListResponse`: DTO padronizado de resposta para listagem de chamadas (`Total`, `Page`, `Limit`, `TotalPages`, `CDRs`).
+- `ActiveChannel`: Estado volátil de chamada em conversação ou discagem (`RecordingFile` preenchido via MixMonitor).
+  - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `WebhookURL`, `StartedAt`, `AnsweredAt`, `IsAnswered`, `Disposition`, `RecordingFile`.
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
 - `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`, `WebhookURL`).
-- `CallEndedWebhookPayload`: DTO canônico de notificação assíncrona de término/falha de chamada para o OmniChat (`Event`, `CallID`, `CallType`, `TenantID`, `AgentID`, `Phone`, `TrunkUsed`, `Disposition`, `HangupCause`, `HangupReason`, `IsAnswered`, `DurationSeconds`, `BillsecSeconds`, `RingSeconds`, `StartedAt`, `EndedAt`, `Timestamp`).
-- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas (inclui `TenantID`, `CampaignID`, `Aggressiveness` opcional para override dinâmico, `AvailableAgents`).
+- `CallEndedWebhookPayload`: DTO canônico de notificação assíncrona de término/falha de chamada para o OmniChat (`Event`, `CallID`, `CallType`, `TenantID`, `AgentID`, `Phone`, `TrunkUsed`, `Disposition`, `HangupCause`, `HangupReason`, `IsAnswered`, `DurationSeconds`, `BillsecSeconds`, `RingSeconds`, `StartedAt`, `EndedAt`, `RecordingURL`, `Timestamp`).
+- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas (inclui `TenantID`, `CampaignID`, `Aggressiveness` opcional para override dinâmico, `MinChannelsPerAgent` opcional para piso de canais por operador [padrão 7], `AvailableAgents`).
 
 ### 3.2. Campanhas e Saturação ([`campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go))
 - `Campaign`: Configuração operacional da campanha (`ID`, `TenantID`, `Mode`, `Status`, `Aggressiveness`, `TrunkName`, `CycleCount`, `SaturationLevel`).
@@ -144,7 +146,7 @@ graph TD
 | `GetCallsSummaryBuffer` | `GetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string) (*domain.CallsSummaryResponse, time.Duration, error)` | Lê buffer determinístico de relatório de 15 minutos (900s). |
 | `SetCallsSummaryBuffer` | `SetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string, data *domain.CallsSummaryResponse, ttl time.Duration) error` | Grava buffer de relatório no Redis. |
 
-### 4.3. `ports.LeadRepository` & `ports.CampaignRepository` ([`repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go))
+### 4.3. `ports.LeadRepository`, `ports.CampaignRepository` & `ports.ReportRepository` ([`repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go))
 | Interface | Método | Assinatura |
 | :--- | :--- | :--- |
 | `LeadRepository` | `BatchInsert` | `BatchInsert(ctx context.Context, leads []*domain.Lead) (int64, error)` |
@@ -154,7 +156,16 @@ graph TD
 | `LeadRepository` | `CountCampaignLeads` | `CountCampaignLeads(ctx context.Context, campaignID string) (total, available, dialed int64, err error)` |
 | `CampaignRepository` | `GetByID` | `GetByID(ctx context.Context, tenantID, campaignID string) (*domain.Campaign, error)` |
 | `CampaignRepository` | `ListActive` | `ListActive(ctx context.Context, tenantID string) ([]*domain.Campaign, error)` |
+| `CampaignRepository` | `ListByTenant` | `ListByTenant(ctx context.Context, tenantID string, status *domain.CampaignStatus) ([]*domain.Campaign, error)` |
+| `CampaignRepository` | `Create` | `Create(ctx context.Context, campaign *domain.Campaign) error` |
+| `CampaignRepository` | `Update` | `Update(ctx context.Context, campaign *domain.Campaign) error` |
+| `CampaignRepository` | `Delete` | `Delete(ctx context.Context, tenantID, campaignID string) error` |
 | `CampaignRepository` | `SetStatus` | `SetStatus(ctx context.Context, tenantID, campaignID string, status domain.CampaignStatus) (*domain.Campaign, error)` |
+| `CampaignRepository` | `IncrementCycle` | `IncrementCycle(ctx context.Context, campaignID string) error` |
+| `ReportRepository` | `SaveCDR` | `SaveCDR(ctx context.Context, cdr *domain.CDR) error` |
+| `ReportRepository` | `GetCallsSummary` | `GetCallsSummary(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string) (*domain.CallsSummaryResponse, error)` |
+| `ReportRepository` | `ListCDRs` | `ListCDRs(ctx context.Context, filter domain.CDRFilter) (*domain.CDRListResponse, error)` |
+| `ReportRepository` | `GetCDRByID` | `GetCDRByID(ctx context.Context, tenantID, cdrID string) (*domain.CDR, error)` |
 
 ### 4.4. `ports.StoragePort` ([`storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go))
 | Interface | Método | Assinatura | Finalidade |
@@ -194,21 +205,20 @@ graph TD
   - `AcquireSlot(ctx context.Context, channel *domain.ActiveChannel, isHuman bool) error`: Incrementa contadores atômicos e indexa canal.
   - `ReleaseSlot(ctx context.Context, channelID string) *domain.ActiveChannel`: Desaloca canal com proteção atômica e retorna o canal encerrado.
   - `ReleaseByAsterisk(ctx context.Context, astChannel, uniqueID string) *domain.ActiveChannel`: Desaloca canal associado a Asterisk e retorna o canal.
+  - `MarkAnswered(astChannel, uniqueID string, answeredAt time.Time)`: Define canal como atendido e crava o timestamp de atendimento pontual.
   - `AssignAgent(callID, agentID string)`: Vincula operador humano à chamada e aloca cota humana.
   - `SetCallDisposition(callID string, disp domain.CallDisposition)`: Define disposição explícita da chamada (AMD, Abandono, etc.).
   - `LinkAsteriskChannel(callID, astChannel, uniqueID string)`: Vincula canais Asterisk à chamada.
   - `ReconcileCounters(ctx context.Context)`: Reconciliação em lote dos contadores contra o mapa real.
 
 ### 5.2. `core.PredictiveEngine` ([`predictive_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go))
+- `SetMinChannelsPerAgent(minChannels int)`: Define o piso mínimo de canais disparados por operador disponível (default: 7).
 - `ProcessDemand(ctx context.Context, req *domain.PredictiveDemandRequest) (*domain.PredictiveDemandResponse, error)`:
   1. Verifica flag de pausa rápida em cache.
   2. Valida se existem operadores ociosos (`len(req.AvailableAgents) > 0`).
   3. Filtra pool de troncos habilitados de saída (ignora `direction = INBOUND` e troncos internos `livekit`).
-  4. Calcula overdialing:
-     $$	ext{Demand} = \left\lceil rac{	ext{numAgents}}{	ext{contactProb}} 	imes \left( 1 + rac{	ext{TMR}}{	ext{TMA}} 
-ight) 	imes 	ext{Agressividade} 
-ight
-ceil$$
+  4. Calcula overdialing com piso mínimo garantido de $\ge 7:1$ por operador disponível:
+     $$\text{Demand} = \max\left(\text{numAgents} \times \text{minRatio}, \left\lceil \frac{\text{numAgents}}{\text{contactProb}} \times \left( 1 + \frac{\text{TMR}}{\text{TMA}} \right) \times \text{Agressividade} \right\rceil\right)$$
   5. Consome leads com `cache.PopLead`, aloca slot no tronco e dispara `Originate` via AMI.
 - `HandlePredictiveHuman(ctx context.Context, channel, uniqueID, phone, campaignID, leadID string) error`:
   - Extrai o próximo operador livre (`GetNextAvailableAgent`).
@@ -227,8 +237,11 @@ ceil$$
   - **Regra de Corrupção Total:** Se as primeiras 30 linhas forem inválidas, aborta imediatamente (`CORRUPTED_FILE`).
   - Grava leads válidos no Postgres em lote e abastece fila Redis (`PushLeads`).
 
-### 5.5. `core.TrunkManager` ([`trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go))
+### 5.5. `core.TrunkManager` ([`trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) & [`trunk_manager_events.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_events.go))
+- Segregação modular canônica para cumprimento estrito do limite de linhas (< 350 linhas por arquivo).
 - `StartDaemon(ctx context.Context)`: Inicia goroutines paralelas para escuta de eventos AMI e qualify loop (ticker de 30s).
+- `handleUserEvent`: Despacha eventos telefônicos (`CallAnswered`, `PredictiveHuman`, `PredictiveAi`, `PredictiveMachine`, `InboundCall`). Em `PredictiveMachine`, define atomicamente `SetCallDisposition(callID, domain.DispositionVoicemail)`.
+- `handleHangup`: Consolida duração, ring time, billsec, link de gravação e persiste o CDR com a disposição canônica (`VOICEMAIL`, `ANSWERED`, etc.).
 - `handleContactStatus`: Rastreia RTT e disponibilidade de endpoints PJSIP.
 - `handleRegistry`: Rastreia status de registros de troncos com autenticação.
 - `SetNotifier(notifier *CallNotifier)`: Injeta o despachador de webhooks assíncronos de chamadas.

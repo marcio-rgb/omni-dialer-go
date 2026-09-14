@@ -71,8 +71,8 @@ func main() {
 	var finished atomic.Bool
 	go playStructuredAudio(audioName, workWord, &finished)
 
-	status := "HUMAN"
-	cause := "DEFAULT_SAFE_HUMAN"
+	status := "UNKNOWN"
+	cause := "PENDING"
 	fullText := ""
 	startTime := time.Now()
 
@@ -150,29 +150,8 @@ func main() {
 			}
 		}
 
-		normFull := normalizeText(fullText)
-		for _, phrase := range voicemailPhrases {
-			if strings.Contains(normFull, phrase) {
-				status = "MACHINE"
-				cause = "VOICEMAIL_" + strings.ToUpper(strings.ReplaceAll(phrase, " ", "_"))
-				break
-			}
-		}
-
-		if status != "MACHINE" {
-			for _, greeting := range humanGreetings {
-				if strings.Contains(normFull, greeting) {
-					status = "HUMAN"
-					cause = "HUMAN_" + strings.ToUpper(strings.ReplaceAll(greeting, " ", "_"))
-					break
-				}
-			}
-		}
-
-		if status != "MACHINE" && normFull != "" {
-			status = "HUMAN"
-			cause = "HUMAN_NATURAL_SPEECH"
-		}
+		// Classificação final: saudações, termos de operadora, fala natural ou silêncio (VOICEMAIL_SILENCE)
+		status, cause = ClassifyOutcome(fullText, voicemailPhrases, humanGreetings)
 	}
 
 	agiVerbose(fmt.Sprintf("VOSK-EAGI Concluido: STATUS=%s CAUSA=%s TEXTO='%s'", status, cause, fullText), 1)
@@ -182,33 +161,50 @@ func main() {
 }
 
 func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
-	audioBaseDir := "/var/lib/asterisk/sounds/audio_cache"
+	audioBaseDir := "/var/lib/asterisk/sounds/words"
 	if envBase := os.Getenv("AUDIO_CACHE_DIR"); envBase != "" {
 		audioBaseDir = envBase
-	} else if _, err := os.Stat("./storage/audio_cache"); err == nil {
-		audioBaseDir = "./storage/audio_cache"
+	} else if _, err := os.Stat("/var/lib/asterisk/sounds/words"); err != nil {
+		if _, err2 := os.Stat("./storage/audio_cache"); err2 == nil {
+			audioBaseDir = "./storage/audio_cache"
+		}
 	}
 
 	var files []string
-	if fileExists(filepath.Join(audioBaseDir, "base", "saudacao.wav")) {
+	if fileExists(filepath.Join(audioBaseDir, "saudacao.wav")) {
+		files = append(files, filepath.Join(audioBaseDir, "saudacao"))
+	} else if fileExists(filepath.Join(audioBaseDir, "base", "saudacao.wav")) {
 		files = append(files, filepath.Join(audioBaseDir, "base", "saudacao"))
 	}
-	if workWord != "" && fileExists(filepath.Join(audioBaseDir, "work_words", workWord+".wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "work_words", workWord))
+
+	if workWord != "" {
+		normWork := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(workWord), " ", "_"))
+		if fileExists(filepath.Join(audioBaseDir, "work_words", normWork+".wav")) {
+			files = append(files, filepath.Join(audioBaseDir, "work_words", normWork))
+		}
 	}
-	if fileExists(filepath.Join(audioBaseDir, "base", "falo_com.wav")) {
+
+	if fileExists(filepath.Join(audioBaseDir, "falo_com.wav")) {
+		files = append(files, filepath.Join(audioBaseDir, "falo_com"))
+	} else if fileExists(filepath.Join(audioBaseDir, "base", "falo_com.wav")) {
 		files = append(files, filepath.Join(audioBaseDir, "base", "falo_com"))
 	}
-	if audioName != "" && fileExists(filepath.Join(audioBaseDir, "names", audioName+".wav")) {
-		files = append(files, filepath.Join(audioBaseDir, "names", audioName))
+
+	if audioName != "" {
+		normName := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(audioName), " ", "_"))
+		if fileExists(filepath.Join(audioBaseDir, "names", normName+".wav")) {
+			files = append(files, filepath.Join(audioBaseDir, "names", normName))
+		}
 	}
 
 	if len(files) == 0 {
+		finished.Store(true)
 		return
 	}
 
 	concatPath := strings.Join(files, "&")
 	agiSend(fmt.Sprintf("EXEC Background %s", concatPath))
+	finished.Store(true)
 }
 
 
