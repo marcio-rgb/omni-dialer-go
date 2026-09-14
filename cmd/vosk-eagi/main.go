@@ -172,6 +172,9 @@ func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
 
 	targetAudio := ""
 	for _, candidate := range []string{
+		filepath.Join(audioBaseDir, "ola_tudo_bem"),
+		filepath.Join(audioBaseDir, "words", "ola_tudo_bem"),
+		filepath.Join(audioBaseDir, "base", "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "alo_tudo_bem"),
 		filepath.Join(audioBaseDir, "words", "alo_tudo_bem"),
 		filepath.Join(audioBaseDir, "base", "alo_tudo_bem"),
