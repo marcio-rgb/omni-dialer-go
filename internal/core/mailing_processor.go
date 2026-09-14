@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -14,9 +15,10 @@ import (
 )
 
 type MailingProcessor struct {
-	storage ports.StoragePort
-	repo    ports.LeadRepository
-	cache   ports.CachePort
+	storage      ports.StoragePort
+	repo         ports.LeadRepository
+	cache        ports.CachePort
+	audioWordMgr *AudioWordManager
 }
 
 func NewMailingProcessor(storage ports.StoragePort, repo ports.LeadRepository, cache ports.CachePort) *MailingProcessor {
@@ -25,6 +27,11 @@ func NewMailingProcessor(storage ports.StoragePort, repo ports.LeadRepository, c
 		repo:    repo,
 		cache:   cache,
 	}
+}
+
+// SetAudioWordManager injeta o gerenciador de áudios para pré-renderização de nomes.
+func (mp *MailingProcessor) SetAudioWordManager(mgr *AudioWordManager) {
+	mp.audioWordMgr = mgr
 }
 
 // ProcessZipRefill executa o streaming do ZIP, valida as primeiras 30 linhas e persiste os leads.
@@ -119,16 +126,35 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 			continue
 		}
 
+		name := ""
+		if len(record) >= 5 {
+			name = strings.TrimSpace(record[4])
+		}
+		if mp.audioWordMgr != nil && name != "" {
+			_, _, _ = mp.audioWordMgr.EnsureNameAudio(ctx, name)
+		}
+
 		validRows++
 		leads = append(leads, &domain.Lead{
 			CampaignID:    campaignID,
 			TenantID:      tenantID,
 			CPF:           cpf,
 			Phone:         phone,
+			Name:          name,
 			Status:        domain.LeadStatusNew,
 			AttemptsCount: 0,
 		})
-		phones = append(phones, phone)
+		if name != "" {
+			item := domain.LeadQueueItem{
+				Phone: phone,
+				CPF:   cpf,
+				Name:  name,
+			}
+			b, _ := json.Marshal(item)
+			phones = append(phones, string(b))
+		} else {
+			phones = append(phones, phone)
+		}
 	}
 
 	if validRows == 0 {

@@ -41,3 +41,29 @@ type RefillResponse struct {
 	Status       string `json:"status"` // "INGESTED"
 	QueueSize    int64  `json:"queue_size"`
 }
+
+// BatchLeadItem representa um lead individual na carga via JSON.
+type BatchLeadItem struct {
+	CPF      string `json:"cpf"`
+	Phone    string `json:"phone"`
+	Name     string `json:"name,omitempty"`
+	AudioKey string `json:"audio_key,omitempty"`
+}
+
+// BatchLeadRequest contrato para carga de lote de leads em campanha preditiva.
+type BatchLeadRequest struct {
+	CampaignID string          `json:"campaign_id"`
+	TenantID   string          `json:"tenant_id"`
+	Leads      []BatchLeadItem `json:"leads"`
+}
+
+// BatchLeadResponse relatório do processamento de carga e pré-síntese de áudios.
+type BatchLeadResponse struct {
+	CampaignID           string `json:"campaign_id"`
+	TotalReceived        int    `json:"total_received"`
+	LeadsQueued          int    `json:"leads_queued"`
+	NewAudiosSynthesized int    `json:"new_audios_synthesized"`
+	CachedAudiosCount    int    `json:"cached_audios_count"`
+	ElapsedMs            int64  `json:"elapsed_ms"`
+}
+

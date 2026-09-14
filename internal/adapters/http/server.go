@@ -26,6 +26,9 @@ type HandlersConfig struct {
 	Report              *ReportHandler
 	Trunk               *TrunkHandler
 	Health              *HealthHandler
+	Audio               *AudioWordsHandler
+	AMD                 *AMDHandler
+	LeadBatch           *LeadBatchHandler
 }
 
 func NewServer(port int, handlers HandlersConfig) *Server {
@@ -53,9 +56,13 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 			// 2. Chamadas Manuais
 			api.Post("/calls/manual", handlers.Manual.DialManual)
 
-			// 3. Campanhas, Refill, Toggle & Saturação
+			// 3. Campanhas, Refill, Ingestão de Leads, Toggle & Saturação
 			api.Route("/campaigns", func(camp chi.Router) {
 				camp.Post("/refill", handlers.Refill.Refill)
+				if handlers.LeadBatch != nil {
+					camp.Post("/{campaign_id}/leads", handlers.LeadBatch.IngestBatch)
+					camp.Post("/leads", handlers.LeadBatch.IngestBatch)
+				}
 				camp.Post("/toggle", handlers.Toggle.Toggle)
 				camp.Get("/saturation", handlers.Saturation.GetConsolidated)
 				camp.Get("/{campaign_id}/saturation", handlers.Saturation.GetIndividual)
@@ -73,6 +80,25 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 				trunks.Delete("/{trunk_id}", handlers.Trunk.Delete)
 				trunks.Post("/reload", handlers.Trunk.Reload)
 			})
+
+			// 6. Pré-renderização e Concatenação de Áudios (Piper TTS)
+			if handlers.Audio != nil {
+				api.Route("/audio", func(audio chi.Router) {
+					audio.Post("/words", handlers.Audio.UpsertWords)
+					audio.Get("/preview", handlers.Audio.Preview)
+					audio.Post("/preview", handlers.Audio.Preview)
+				})
+			}
+
+			// 7. Configuração Dinâmica de AMD & Hot-Reload Asterisk
+			if handlers.AMD != nil {
+				api.Route("/amd", func(amd chi.Router) {
+					amd.Get("/config", handlers.AMD.GetConfig)
+					amd.Put("/config", handlers.AMD.UpdateConfig)
+					amd.Post("/config", handlers.AMD.UpdateConfig)
+					amd.Post("/reload", handlers.AMD.Reload)
+				})
+			}
 		})
 	})
 

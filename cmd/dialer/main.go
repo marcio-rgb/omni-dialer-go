@@ -15,6 +15,7 @@ import (
 	"dialer-go/internal/adapters/postgres"
 	redisAdapter "dialer-go/internal/adapters/redis"
 	"dialer-go/internal/adapters/storage"
+	"dialer-go/internal/adapters/tts"
 	"dialer-go/internal/adapters/webhook"
 	"dialer-go/internal/core"
 )
@@ -80,7 +81,29 @@ func main() {
 	mailingProcessor := core.NewMailingProcessor(storageAdapter, leadRepo, cache)
 	saturationService := core.NewSaturationService(leadRepo, campaignRepo)
 
-	// 7. Middlewares & Handlers HTTP
+	// 7. Motor TTS & Cache de Áudios
+	piperAdapter, err := tts.NewPiperAdapter("", "", "")
+	var audioHandler *httpAdapter.AudioWordsHandler
+	if err != nil {
+		log.Printf("[WARN] Piper TTS indisponivel (%v). Rotas /audio operarao apenas com cache.", err)
+	} else {
+		log.Println("[INFO] Piper TTS (Voz Dii PT-BR) inicializado com sucesso.")
+	}
+	audioConcatenator := core.NewAudioConcatenator()
+	audioWordMgr, err := core.NewAudioWordManager("./storage/audio_cache", piperAdapter, audioConcatenator)
+	if err != nil {
+		log.Printf("[WARN] Falha ao inicializar AudioWordManager: %v", err)
+	} else {
+		audioHandler = httpAdapter.NewAudioWordsHandler(audioWordMgr)
+		mailingProcessor.SetAudioWordManager(audioWordMgr)
+	}
+
+	// 8. Gestão Dinâmica de AMD & Reconhecimento de Voz
+	amdConfigMgr := core.NewAMDConfigManager("./storage", "/opt/ominichat/asterisk/conf")
+	amdHandler := httpAdapter.NewAMDHandler(amdConfigMgr, amiClient)
+	leadBatchHandler := httpAdapter.NewLeadBatchHandler(leadRepo, cache, audioWordMgr)
+
+	// 9. Middlewares & Handlers HTTP
 	whitelist := httpAdapter.NewIPWhitelistMiddleware(cfg.InitialWhitelistIPs)
 
 	handlersConfig := httpAdapter.HandlersConfig{
@@ -93,11 +116,14 @@ func main() {
 		Report:              httpAdapter.NewReportHandler(reportRepo, cache),
 		Trunk:               httpAdapter.NewTrunkHandler(trunkRepo, cache, trunkMgr, channelMgr, amiClient),
 		Health:              httpAdapter.NewHealthHandler(pgPool, cache, amiClient, channelMgr),
+		Audio:               audioHandler,
+		AMD:                 amdHandler,
+		LeadBatch:           leadBatchHandler,
 	}
 
 	server := httpAdapter.NewServer(cfg.AppPort, handlersConfig)
 
-	// 8. Inicialização com Graceful Shutdown
+	// 9. Inicialização com Graceful Shutdown
 	go func() {
 		log.Printf("[INFO] Servidor HTTP pronto na porta :%d", cfg.AppPort)
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {

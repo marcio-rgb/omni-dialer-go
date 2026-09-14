@@ -21,7 +21,7 @@ O **Agente Especialista Go** é a autoridade técnica em padrões de código, co
 graph TD
     subgraph Dominio["1. Domain Layer (Sem Dependências)"]
         Entidades["Entidades: CDR, ActiveChannel, Trunk, Campaign, Lead"]
-        DTOs["DTOs de I/O & RFC 7807 (ProblemDetails)"]
+        DTOs["DTOs de I/O & RFC 7807 (ProblemDetails, AudioWordsDTO)"]
         Enums["Enums Fortemente Tipados (CallType, Disposition, etc.)"]
     end
 
@@ -31,6 +31,7 @@ graph TD
         RepoPort["ports.Trunk/Lead/Campaign/Report/RoutingRepository"]
         StoragePort["ports.StoragePort"]
         WebhookPort["ports.WebhookPort"]
+        TTSPort["ports.TTSPort"]
     end
 
     subgraph Core["3. Core Domain Layer (Regras de Negócio)"]
@@ -42,6 +43,7 @@ graph TD
         CallNotif["core.CallNotifier (Webhook Dispatcher)"]
         MailProc["core.MailingProcessor"]
         SatServ["core.SaturationService"]
+        AudioMgr["core.AudioWordManager + AudioConcatenator"]
     end
 
     subgraph Adaptadores["4. Adapters Layer (Implementações Concretas)"]
@@ -51,6 +53,7 @@ graph TD
         AMIAdp["adapters/ami (TCP Socket puro)"]
         StorageAdp["adapters/storage (MinIO S3 Client)"]
         WebhookAdp["adapters/webhook (HTTP Client)"]
+        TTSAdp["adapters/tts (Piper TTS CLI / ONNX pt-BR)"]
     end
 
     Core --> Portas
@@ -99,6 +102,12 @@ graph TD
 ### 3.5. Erros Padronizados ([`errors.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/errors.go))
 - `ProblemDetails`: Estrutura com `Type`, `Title`, `Status`, `Detail`, `Code`, `InvalidParams`, `Metadata`.
 - Construtores: `NewErrBadRequest`, `NewErrNotFound`, `NewErrConflict`, `NewErrTooManyRequests`, `NewErrInternal`, `NewErrForbidden`.
+
+### 3.6. Dicionário de Áudio & TTS ([`audio_words_dto.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/audio_words_dto.go))
+- `WordItemDTO`: Palavra individual com chave slug e texto para síntese (`Key`, `Text`).
+- `CustomPhrasesDTO`: Frases-base padrão parametrizáveis (`Saudacao`, `FaloCom`, `Momentinho`).
+- `UpsertAudioWordsRequest` / `UpsertAudioWordsResponse`: DTOs de pré-renderização de bancos de palavras em cache de disco.
+- `AudioPreviewRequest`: DTO para teste e concatenação determinística em tempo de desenvolvimento/campanha.
 
 ---
 
@@ -155,7 +164,13 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | `WebhookPort` | `NotifyCallEnded` | `NotifyCallEnded(ctx context.Context, webhookURL string, payload *domain.CallEndedWebhookPayload) error` | Dispara notificação HTTP POST de término de chamada para o OmniChat. |
 
-### 4.6. `http.IPWhitelistMiddleware` ([`ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go))
+### 4.6. `ports.TTSPort` ([`tts_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/tts_port.go))
+| Interface | Método | Assinatura | Finalidade |
+| :--- | :--- | :--- | :--- |
+| `TTSPort` | `Synthesize` | `Synthesize(ctx context.Context, text string) ([]byte, error)` | Converte texto cru em áudio WAV (PCM 16-bit) via modelo neural offline. |
+| `TTSPort` | `GetSampleRate` | `GetSampleRate() int` | Devolve a taxa de amostragem padrão de saída (ex: 22050 Hz). |
+
+### 4.7. `http.IPWhitelistMiddleware` ([`ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go))
 - **Segurança de Rede & Resiliência de Borda:**
   - Suporta IPs literais e máscaras CIDR (`net.ParseCIDR` com busca em `[]*net.IPNet` thread-safe via `sync.RWMutex`).
   - Suporta wildcard `*` para redes dinâmicas ou testes.
@@ -220,6 +235,20 @@ ceil$$
 ### 5.6. `core.CallNotifier` ([`call_notifier.go`](file:///home/marcio/ominichat/dialer-go/internal/core/call_notifier.go))
 - `ResolveHangupReason(disposition domain.CallDisposition, causeInt int, isAnswered bool) string`: Traduz causas de desligamento Q.850 e desfechos em mensagens amigáveis em português (`Número Ocupado`, `Não Atende`, etc.).
 - `DispatchManualHangup(activeChan *domain.ActiveChannel, disposition domain.CallDisposition, causeInt int, duration, billsec, ringSeconds int)`: Despacha payload canônico `CallEndedWebhookPayload` para o OmniChat via `WebhookPort` em goroutine assíncrona desacoplada.
+
+### 5.7. `core.AudioWordManager` & `core.AudioConcatenator` ([`audio_word_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/audio_word_manager.go))
+- **`AudioConcatenator`:** Operador binário de concatenação de streams PCM WAV 16-bit mono com `TrimSilencePCM` automático (remoção de silêncio residual de síntese) e união contínua sem necessidade de pausas artificiais em milissegundos.
+- **`AudioWordManager`:**
+  - Gerenciador de cache físico particionado em `storage/audio_cache/{base,names,work_words}`.
+  - `EnsureNameAudio(ctx, rawName)`: **Síntese inteligente com acentos para máxima naturalidade fonética** e gravação com slug normalizado (`^[a-z0-9_]+$`) para proteção estrita do dialplan Asterisk (`${AUDIO_NAME}`).
+  - `UpsertWords(ctx context.Context, req domain.UpsertAudioWordsRequest)`: Síntese idempotente em lote com bypass de cache.
+  - `GeneratePreview(ctx context.Context, req domain.AudioPreviewRequest)`: Montagem em memória e retorno binário do áudio de preview composto.
+
+### 5.8. `core.AMDConfigManager` ([`amd_config_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/amd_config_manager.go))
+- Gerenciador thread-safe (`sync.RWMutex`) de parâmetros de triagem acústica e palavras-chave de secretária eletrônica.
+- `GetConfig() domain.AMDConfig`: Consulta O(1) em memória.
+- `UpdateConfig(ctx, req, ami)`: Atualiza parâmetros em memória, regrava `amd.conf` e `vosk_amd.json`, e dispara `module reload app_amd.so` no Asterisk via AMI Command.
+- `ReloadAsterisk(ctx, ami)`: Força a releitura do `amd.conf` no PBX.
 
 ---
 

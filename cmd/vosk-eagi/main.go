@@ -24,7 +24,10 @@ import (
 // Frases inequívocas de caixas postais, correio de voz e operadoras
 var voicemailPhrases = []string{
 	"caixa postal",
+	"deixe recado",
 	"deixe seu recado",
+	"recado",
+	"assim que possivel",
 	"deixe sua mensagem",
 	"apos o sinal",
 	"apos o bip",
@@ -102,6 +105,30 @@ func main() {
 	if envDur := os.Getenv("VOSK_MAX_DURATION_SEC"); envDur != "" {
 		if d, err := strconv.ParseFloat(envDur, 64); err == nil && d > 0 {
 			maxDuration = d
+		}
+	}
+
+	// Carrega personalização dinâmica do AMD salva pelo Dialer-Go
+	for _, p := range []string{"/etc/asterisk/vosk_amd.json", "/opt/ominichat/asterisk/conf/vosk_amd.json", "./storage/vosk_amd.json"} {
+		if data, err := os.ReadFile(p); err == nil {
+			var cfg struct {
+				MaxSilenceMs       int      `json:"max_silence_ms"`
+				VoskMaxDurationSec float64  `json:"vosk_max_duration_sec"`
+				VoicemailPhrases   []string `json:"voicemail_phrases"`
+				HumanGreetings     []string `json:"human_greetings"`
+			}
+			if json.Unmarshal(data, &cfg) == nil {
+				if cfg.VoskMaxDurationSec > 0 {
+					maxDuration = cfg.VoskMaxDurationSec
+				}
+				if len(cfg.VoicemailPhrases) > 0 {
+					voicemailPhrases = cfg.VoicemailPhrases
+				}
+				if len(cfg.HumanGreetings) > 0 {
+					humanGreetings = cfg.HumanGreetings
+				}
+				break
+			}
 		}
 	}
 

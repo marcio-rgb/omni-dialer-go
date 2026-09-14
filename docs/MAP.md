@@ -28,6 +28,7 @@ graph TD
         TogHandler["toggle_handler.go"]
         RepHandler["report_handler.go"]
         HealthHandler["health_handler.go"]
+        AudioHandler["audio_words_handler.go"]
     end
 
     subgraph CoreEngines["Camada de Negócio / Motores (internal/core/)"]
@@ -38,6 +39,7 @@ graph TD
         InbEngine["inbound_engine.go\n(Lookup O(1) Receptivo)"]
         MailProc["mailing_processor.go\n(Streaming MinIO / FILO)"]
         SatServ["saturation_service.go\n(Métricas de Penetração)"]
+        AudioMgr["audio_word_manager.go\n+ audio_concatenator.go"]
     end
 
     subgraph Ports["Contratos Canônicos (internal/ports/)"]
@@ -45,6 +47,7 @@ graph TD
         CachePort["cache_port.go"]
         RepoPort["repository_port.go"]
         StoragePort["storage_port.go"]
+        TTSPort["tts_port.go"]
     end
 
     subgraph AdaptersInfra["Adaptadores de Infraestrutura (internal/adapters/)"]
@@ -52,10 +55,11 @@ graph TD
         PGPool["postgres/db.go + *_repo.go\n(pgx/v5 Pool Transacional)"]
         RedisClient["redis/client.go\n(go-redis/v9)"]
         MinIOClient["storage/minio_adapter.go\n(MinIO S3 Client)"]
+        PiperClient["tts/piper_adapter.go\n(Piper TTS CLI pt-BR)"]
     end
 
     subgraph Domain["Entidades & Tipos (internal/domain/)"]
-        DomEntities["call.go, campaign.go, lead.go, trunk.go, report.go, errors.go"]
+        DomEntities["call.go, campaign.go, lead.go, trunk.go, report.go, errors.go, audio_words_dto.go"]
     end
 
     MainDialer --> Cfg
@@ -113,6 +117,7 @@ graph TD
 | [`internal/domain/trunk.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/trunk.go) | 170 | Entidade `Trunk`, DTOs de cadastro, enums de transporte e registro. | `TRUNKS_LIFECYCLE.md` |
 | [`internal/domain/report.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/report.go) | 82 | DTOs de métricas operacionais consolidadas. | Problem Details |
 | [`internal/domain/errors.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/errors.go) | 109 | Estrutura canônica `ProblemDetails` e geradores de erro padronizados. | RFC 7807 / RFC 9457 |
+| [`internal/domain/audio_words_dto.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/audio_words_dto.go) | 88 | DTOs de pré-renderização de bancos de palavras e preview concatenado. | Domínio Puro |
 
 ---
 
@@ -124,6 +129,7 @@ graph TD
 | [`internal/ports/repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go) | 43 | Contratos de persistência relacional (`Trunk`, `Lead`, `Campaign`, `Report`, `Routing`). | Secondary Port |
 | [`internal/ports/storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go) | 10 | Contrato de armazenamento de objetos S3/MinIO. | Secondary Port |
 | [`internal/ports/webhook_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/webhook_port.go) | 25 | Contrato de notificação de desfecho de chamadas para upstream via Webhook. | Secondary Port |
+| [`internal/ports/tts_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/tts_port.go) | 15 | Contrato de conversão texto-para-áudio PCM WAV offline via modelo neural. | Secondary Port |
 
 ---
 
@@ -138,6 +144,9 @@ graph TD
 | [`internal/core/inbound_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/inbound_engine.go) | 69 | Roteamento O(1) de chamadas entrantes com base em `phone_trunk_mappings`. | Strategy (Inbound) |
 | [`internal/core/mailing_processor.go`](file:///home/marcio/ominichat/dialer-go/internal/core/mailing_processor.go) | 157 | Ingestão e parsing streaming de arquivos CSV/TXT via MinIO S3. | Batch Ingestion / ETL |
 | [`internal/core/saturation_service.go`](file:///home/marcio/ominichat/dialer-go/internal/core/saturation_service.go) | 108 | Cálculo da régua de 5 níveis de saturação de campanhas. | Analytics Service |
+| [`internal/core/audio_concatenator.go`](file:///home/marcio/ominichat/dialer-go/internal/core/audio_concatenator.go) | 226 | Operador binário de concatenação e injeção de silêncio para fluxos PCM WAV mono. | Audio Stream Operator |
+| [`internal/core/audio_word_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/audio_word_manager.go) | 262 | Gerenciador de cache físico particionado, síntese inteligente com acentos e normalização para dialplan. | Cache / Storage Manager |
+| [`internal/core/amd_config_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/amd_config_manager.go) | 211 | Gerenciador em memória de parâmetros AMD, silêncio máximo, frases de caixa postal e hot-reload Asterisk. | Strategy / Config Manager |
 
 ---
 
@@ -155,22 +164,26 @@ graph TD
 | [`internal/adapters/redis/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/redis/client.go) | 233 | Cliente Redis para filas, controle de agentes online, pausa e cache de relatórios. | Adapter / Cache |
 | [`internal/adapters/storage/minio_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/storage/minio_adapter.go) | 72 | Cliente MinIO S3 para download em streaming de arquivos de mailing. | Adapter / S3 Client |
 | [`internal/adapters/webhook/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/webhook/client.go) | 88 | Cliente HTTP para despacho de webhooks assíncronos de término de chamadas ao OmniChat. | Adapter / HTTP Client |
+| [`internal/adapters/tts/piper_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/tts/piper_adapter.go) | 115 | Adaptador local para síntese neural pt-BR (Piper TTS / modelo ONNX Dii). | Adapter / CLI Runner |
 
 ---
 
 ### 2.8. Adaptador HTTP & Roteador Chi (`internal/adapters/http/`)
 | Arquivo | LOC | Responsabilidade | Padrões |
 | :--- | :--- | :--- | :--- |
-| [`internal/adapters/http/server.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/server.go) | 100 | Montagem das rotas REST Chi v5 e injeção do middleware de segurança. | Front Controller / Router |
+| [`internal/adapters/http/server.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/server.go) | 126 | Montagem das rotas REST Chi v5 e injeção do middleware de segurança. | Front Controller / Router |
 | [`internal/adapters/http/ip_whitelist.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/ip_whitelist.go) | 116 | Middleware de autorização por IP com verificação em memória `sync.Map`. | Middleware / Chain of Resp. |
 | [`internal/adapters/http/predictive_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/predictive_handler.go) | 47 | Endpoint `POST /api/v1/predictive/demand`. | HTTP Handler |
 | [`internal/adapters/http/manual_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/manual_handler.go) | 47 | Endpoint `POST /api/v1/calls/manual`. | HTTP Handler |
 | [`internal/adapters/http/refill_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/refill_handler.go) | 47 | Endpoint `POST /api/v1/campaigns/refill`. | HTTP Handler |
+| [`internal/adapters/http/lead_batch_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/lead_batch_handler.go) | 156 | Endpoint `POST /api/v1/campaigns/{id}/leads` (carga JSON em lote e áudios de nomes). | HTTP Handler |
 | [`internal/adapters/http/toggle_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/toggle_handler.go) | 97 | Endpoint `POST /api/v1/campaigns/toggle`. | HTTP Handler |
 | [`internal/adapters/http/saturation_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/saturation_handler.go) | 77 | Endpoints `GET /api/v1/campaigns/{id}/saturation` e em lote. | HTTP Handler |
 | [`internal/adapters/http/report_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/report_handler.go) | 150 | Endpoint `GET /api/v1/campaigns/{id}/reports/operational`. | HTTP Handler |
 | [`internal/adapters/http/trunk_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/trunk_handler.go) | 388 | CRUD de troncos SIP/PJSIP (`/api/v1/trunks`). | HTTP Handler |
 | [`internal/adapters/http/health_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/health_handler.go) | 69 | Endpoint de telemetria `GET /health` e `GET /api/v1/health`. | Health Check Handler |
+| [`internal/adapters/http/audio_words_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/audio_words_handler.go) | 117 | Endpoints `POST /api/v1/audio/words` (upsert) e `GET/POST /api/v1/audio/preview` (concatenação). | HTTP Handler |
+| [`internal/adapters/http/amd_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/amd_handler.go) | 109 | Endpoints `GET/PUT /api/v1/amd/config` e `POST /api/v1/amd/reload`. | HTTP Handler |
 
 ---
 

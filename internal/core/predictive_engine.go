@@ -272,6 +272,8 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			"__LEAD_CPF":    leadItem.CPF,
 			"LEAD_NAME":     leadItem.Name,
 			"__LEAD_NAME":   leadItem.Name,
+			"AUDIO_NAME":    domain.Slugify(leadItem.Name),
+			"__AUDIO_NAME":  domain.Slugify(leadItem.Name),
 		}
 		if selectedTrunk.UserAgent != nil && *selectedTrunk.UserAgent != "" {
 			vars["TRUNK_USER_AGENT"] = *selectedTrunk.UserAgent
