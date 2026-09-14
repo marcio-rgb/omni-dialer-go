@@ -31,3 +31,28 @@ Qualquer alteração — inclusive adição, remoção, alteração de assinatur
 
 > [!CAUTION]
 > Nenhuma alteração é dada por finalizada se os mapeamentos dos agentes estiverem desatualizados ou divergentes do código-fonte em execução.
+
+---
+
+## 3. Regra Geral e Obrigatória de Governança da API (API_REFERENCE.md)
+
+Toda e qualquer alteração, adição, remoção ou refatoração nos endpoints HTTP do **Dialer-Go** exige **obrigatoriamente a atualização detalhada e imediata** do documento canônico:
+👉 [`.agents/workflows/API_REFERENCE.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/API_REFERENCE.md)
+
+### Diretrizes de Cumprimento Obrigatório:
+1. **Sincronização Atômica:** Qualquer commit ou intervenção que modifique ou adicione:
+   - Rotas HTTP (`internal/adapters/http/server.go` ou sub-handlers).
+   - Parâmetros de requisição (Query Parameters, Path Parameters, Headers HTTP ou JSON Request Body).
+   - DTOs de entrada e saída (`internal/domain/*_dto.go` ou `internal/domain/*.go`).
+   - Códigos de status HTTP e payloads de erro padronizados (RFC 7807).
+   - Disparos de webhooks de saída (egress) ou endpoints consumidos de integração (ex: `/api/dialer/refill`, `/api/telephony/webhook/call-ended`).
+   - Barramentos de eventos assíncronos ou canais de monitoramento WebSocket em tempo real.
+   **DEVE conter no mesmo commit/intervenção a documentação completa correspondente no `API_REFERENCE.md`.**
+2. **Nível de Detalhe Exigido no `API_REFERENCE.md`:**
+   - Descrição da responsabilidade operacional do endpoint.
+   - Headers necessários (`Content-Type`, `X-Tenant-Id`, `User-Agent`, etc.).
+   - Tabela descritiva de campos com tipos, obrigatoriedade, valores padrão e validações.
+   - Exemplos reais de JSON Request Body.
+   - Exemplos reais de JSON Response de Sucesso (`200 OK`, `201 Created`, etc.).
+   - Catálogo de erros mapeados no padrão Problem Details (RFC 7807) com códigos de status (`400`, `404`, `422`, `429`, `500`), códigos internos (`INVALID_JSON`, `TRUNK_NOT_FOUND`, etc.) e causas prováveis.
+3. **Proibição de Descompasso:** É terminantemente proibido publicar código ou finalizar tarefas com endpoints sem documentação ou com discrepâncias entre as structs do Go e o catálogo da API.
