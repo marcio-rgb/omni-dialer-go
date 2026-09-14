@@ -13,7 +13,7 @@ func TestNormalizeText(t *testing.T) {
 		expected string
 	}{
 		{"Márcio", "marcio"},
-		{"Alô! Tudo bem?", "alo! tudo bem?"},
+		{"Alô! Tudo bem?", "alo tudo bem"},
 		{"   JOÃO SILVA  ", "joao silva"},
 		{"Secretária Eletrônica", "secretaria eletronica"},
 	}
@@ -92,7 +92,7 @@ func TestLoadDynamicConfig(t *testing.T) {
 	}
 }
 
-func TestClassifyOutcome_SilenceAssumesHuman(t *testing.T) {
+func TestClassifyOutcome_SilenceRejectsToMachine(t *testing.T) {
 	silenceCases := []string{
 		"",
 		"   ",
@@ -101,11 +101,29 @@ func TestClassifyOutcome_SilenceAssumesHuman(t *testing.T) {
 
 	for _, tc := range silenceCases {
 		status, cause := ClassifyOutcome(tc, nil, nil)
-		if status != "HUMAN" {
-			t.Errorf("para silêncio %q, esperava status HUMAN, obteve %q", tc, status)
+		if status != "MACHINE" {
+			t.Errorf("para silêncio %q, esperava status MACHINE, obteve %q", tc, status)
 		}
-		if cause != "HUMAN_SILENCE_ASSUMED" {
-			t.Errorf("para silêncio %q, esperava causa HUMAN_SILENCE_ASSUMED, obteve %q", tc, cause)
+		if cause != "SILENCE_TIMEOUT" {
+			t.Errorf("para silêncio %q, esperava causa SILENCE_TIMEOUT, obteve %q", tc, cause)
+		}
+	}
+}
+
+func TestClassifyOutcome_UnconfirmedAudioRejectsToMachine(t *testing.T) {
+	unconfirmedCases := []string{
+		"noticiario nacional das oito",
+		"som de televisao ligada",
+		"barulho estatica chiado",
+	}
+
+	for _, tc := range unconfirmedCases {
+		status, cause := ClassifyOutcome(tc, nil, nil)
+		if status != "MACHINE" {
+			t.Errorf("para ruído/não-humano %q, esperava status MACHINE, obteve %q", tc, status)
+		}
+		if cause != "UNCONFIRMED_AUDIO" {
+			t.Errorf("para ruído/não-humano %q, esperava causa UNCONFIRMED_AUDIO, obteve %q", tc, cause)
 		}
 	}
 }
@@ -138,11 +156,12 @@ func TestClassifyOutcome_HumanSpeech(t *testing.T) {
 		expectedCause string
 	}{
 		{"alo", "HUMAN_ALO"},
-		{"tudo bem quem fala", "HUMAN_TUDO"},
-		{"tudo e voce", "HUMAN_TUDO"},
+		{"tudo bem quem fala", "HUMAN_QUEM_FALA"},
+		{"tudo bem", "HUMAN_TUDO_BEM"},
 		{"opa bom dia", "HUMAN_OPA"},
 		{"sim com quem", "HUMAN_SIM"},
-		{"eu nao quero nada disso obrigado", "HUMAN_NATURAL_SPEECH"},
+		{"pronto pode falar", "HUMAN_PRONTO"},
+		{"sou eu mesma", "HUMAN_SOU_EU"},
 	}
 
 	for _, tc := range cases {

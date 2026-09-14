@@ -84,7 +84,9 @@ graph TD
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
 - `ManualCallRequest` / `ManualCallResponse`: DTOs para originação manual de chamada (`TenantID`, `AgentID`, `Phone`, `SIPRoute`, `TrunkID`, `LeadName`, `LeadCPF`, `WebhookURL`).
 - `CallEndedWebhookPayload`: DTO canônico de notificação assíncrona de término/falha de chamada para o OmniChat (`Event`, `CallID`, `CallType`, `TenantID`, `AgentID`, `Phone`, `TrunkUsed`, `Disposition`, `HangupCause`, `HangupReason`, `IsAnswered`, `DurationSeconds`, `BillsecSeconds`, `RingSeconds`, `StartedAt`, `EndedAt`, `RecordingURL`, `Timestamp`).
-- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas (inclui `TenantID`, `CampaignID`, `Aggressiveness` opcional para override dinâmico, `MinChannelsPerAgent` opcional para piso de canais por operador [padrão 7], `AvailableAgents`).
+- `PredictiveDemandRequest` / `PredictiveDemandResponse`: DTOs para recebimento e despacho de rodadas preditivas (inclui `TenantID`, `CampaignID`, `Aggressiveness` opcional para override dinâmico, `MinChannelsPerAgent` opcional para piso de canais por operador [padrão seguro 2, configurável dinamicamente entre 1 e 50 via API], `AvailableAgents`).
+- `PredictiveHandler`: Controladores HTTP para demanda preditiva (`Demand`) e governança dinâmica de pacing (`GetPacing`, `SetPacing` mapeados em `GET / POST / PUT /api/v1/predictive/pacing`).
+- `PredictiveEngine`: Motor preditivo com controle atômico thread-safe (`sync/atomic.Int32`) de canais simultâneos por operador disponível (`SetMinChannelsPerAgent`, `GetMinChannelsPerAgent`).
 
 ### 3.2. Campanhas e Saturação ([`campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go))
 - `Campaign`: Configuração operacional da campanha (`ID`, `TenantID`, `Mode`, `Status`, `Aggressiveness`, `TrunkName`, `CycleCount`, `SaturationLevel`).

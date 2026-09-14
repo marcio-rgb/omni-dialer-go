@@ -50,6 +50,9 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Diagnóstico de integridade (AMI, Postgres, Redis, Canais) | Sem bloqueio de IP |
 | `POST` | `/api/v1/predictive/demand` | Processa a demanda de agentes e calcula disparos preditivos | Whitelist + Body (`tenant_id`) |
+| `GET` | `/api/v1/predictive/pacing` | Consulta taxa dinâmica de chamadas por operador disponível | Whitelist |
+| `POST` | `/api/v1/predictive/pacing` | Atualiza taxa dinâmica de chamadas por operador disponível | Whitelist + JSON Body |
+| `PUT` | `/api/v1/predictive/pacing` | Atualiza taxa dinâmica de chamadas por operador disponível | Whitelist + JSON Body |
 | `POST` | `/api/v1/calls/manual` | Origina chamada manual com prioridade preemptiva imediata | Whitelist + Body (`tenant_id`) |
 | `GET` | `/api/v1/campaigns` | Lista campanhas do tenant com filtro opcional por status | Whitelist + `X-Tenant-Id` / Query |
 | `GET` | `/api/v1/campaigns/{id}` | Recupera uma campanha específica por ID | Whitelist + `X-Tenant-Id` / Query |
@@ -170,6 +173,60 @@ Content-Type: application/json
 - **`400 Bad Request` (`MISSING_REQUIRED_FIELDS`):** `tenant_id` ou `campaign_id` ausentes.
 - **`400 Bad Request` (`TRUNK_UNAVAILABLE`):** Tronco vinculado está desabilitado ou sem canais.
 - **`404 Not Found` (`CAMPAIGN_NOT_FOUND`):** Campanha inexistente ou inativa.
+
+---
+
+### 3.2.1. Controle Dinâmico de Pacing (`GET / POST / PUT /api/v1/predictive/pacing`)
+Consulta ou atualiza dinamicamente a taxa de discagem (número de chamadas simultâneas disparadas por atendente disponível) em tempo real, sem necessidade de reinicialização do serviço ou dos containers.
+
+#### A. Consulta de Pacing (`GET /api/v1/predictive/pacing`)
+Retorna a taxa atual configurada em memória e o texto descritivo.
+
+##### Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "min_channels_per_agent": 2,
+    "description": "Taxa de chamadas simultaneas disparadas por operador disponivel"
+  }
+}
+```
+
+#### B. Atualização Dinâmica de Pacing (`POST` ou `PUT /api/v1/predictive/pacing`)
+Atualiza a taxa atômica (`sync/atomic.Int32`) de chamadas por operador imediatamente.
+
+##### Headers:
+```http
+Content-Type: application/json
+```
+
+##### Request Body:
+| Campo | Tipo | Obrigatório | Descrição / Regra |
+| :--- | :--- | :--- | :--- |
+| `min_channels_per_agent` | `integer` | **Sim** | Quantidade inteira de chamadas por operador disponível (permitido entre `1` e `50`). |
+
+##### Exemplo de Entrada:
+```json
+{
+  "min_channels_per_agent": 3
+}
+```
+
+##### Resposta de Sucesso (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "min_channels_per_agent": 3,
+    "message": "Taxa de discagem por operador disponivel atualizada com sucesso"
+  }
+}
+```
+
+##### Erros Mapeados:
+- **`400 Bad Request` (`INVALID_JSON`):** Corpo da requisição não é um JSON válido.
+- **`400 Bad Request` (`INVALID_PACING_RATIO`):** Valor fora do intervalo aceitável (menor que 1 ou maior que 50).
 
 ---
 

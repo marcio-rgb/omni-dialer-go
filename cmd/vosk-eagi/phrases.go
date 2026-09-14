@@ -47,7 +47,7 @@ var voicemailPhrases = []string{
 	"sua mensagem",
 }
 
-// Saudações e confirmações humanas habituais em telefonia brasileira
+// Saudações e confirmações humanas habituais em telefonia brasileira (Avaliação Positiva de Atendimento)
 var humanGreetings = []string{
 	"alo",
 	"ola",
@@ -58,13 +58,13 @@ var humanGreetings = []string{
 	"quem fala",
 	"quem e",
 	"quem ta falando",
+	"com quem",
 	"fala",
 	"opa",
 	"bom dia",
 	"boa tarde",
 	"boa noite",
 	"pode falar",
-	"com quem",
 	"aqui e",
 	"sou eu",
 	"e ele",
@@ -76,15 +76,14 @@ var humanGreetings = []string{
 	"com ela",
 	"o que deseja",
 	"diga",
-	"tudo",
 	"tudo bem",
-	"tudo e voce",
 	"tudo bom",
 	"beleza",
 	"joia",
-	"ola tudo bem",
-	"alo tudo bem",
-	"alo quem fala",
+	"estou ouvindo",
+	"to ouvindo",
+	"na escuta",
+	"pode dizer",
 }
 
 func loadDynamicConfig(maxDuration *float64) {
@@ -120,12 +119,33 @@ func normalizeText(s string) string {
 	if err != nil {
 		res = s
 	}
-	return strings.ToLower(strings.TrimSpace(res))
+	var sb strings.Builder
+	for _, r := range strings.ToLower(res) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(sb.String()), " ")
 }
 
-// ClassifyOutcome analisa o texto acumulado da chamada e determina o status e causa da triagem.
-// Se houver termos inequívocos de caixa postal/operadora, classifica como MACHINE.
-// Silêncio (texto vazio) ou saudações/fala natural são classificados como HUMAN por segurança (Regra de Ouro da Telefonia).
+// matchWordOrPhrase verifica se a palavra ou frase ocorre com fronteiras limpas no texto.
+// Evita falsos positivos como "oito" casar com "oi" ou "assim" casar com "sim".
+func matchWordOrPhrase(text, phrase string) bool {
+	normText := normalizeText(text)
+	normPhrase := normalizeText(phrase)
+	if normText == "" || normPhrase == "" {
+		return false
+	}
+	paddedText := " " + normText + " "
+	paddedPhrase := " " + normPhrase + " "
+	return strings.Contains(paddedText, paddedPhrase)
+}
+
+// ClassifyOutcome analisa o texto acumulado da chamada e aplica AVALIAÇÃO POSITIVA DE ATENDIMENTO.
+// Regra de Negócio: Só é classificado como HUMAN se houver confirmação positiva inequívoca (ex: 'alô', 'sim', 'pronto').
+// Silêncio, ruídos de linha, caixas postais ou áudios ininteligíveis são classificados como MACHINE para evitar abandono de operadores.
 func ClassifyOutcome(fullText string, vmPhrases, greetings []string) (status, cause string) {
 	if len(vmPhrases) == 0 {
 		vmPhrases = voicemailPhrases
@@ -136,23 +156,25 @@ func ClassifyOutcome(fullText string, vmPhrases, greetings []string) (status, ca
 
 	norm := normalizeText(fullText)
 	if norm == "" {
-		// Cliente atendeu e permaneceu ouvindo a saudação em silêncio.
-		// Na dúvida, transfere para o operador humano para não perder cliente real.
-		return "HUMAN", "HUMAN_SILENCE_ASSUMED"
+		// Cliente permaneceu em silêncio após a saudação: não repassa ao operador
+		return "MACHINE", "SILENCE_TIMEOUT"
 	}
 
+	// 1. Checagem prioritária de termos de caixa postal / correio de voz / mensagem de operadora
 	for _, phrase := range vmPhrases {
-		if strings.Contains(norm, phrase) {
+		if matchWordOrPhrase(norm, phrase) {
 			return "MACHINE", "VOICEMAIL_" + strings.ToUpper(strings.ReplaceAll(phrase, " ", "_"))
 		}
 	}
 
+	// 2. Checagem estritamente positiva de saudações / confirmações humanas
 	for _, greeting := range greetings {
-		if strings.Contains(norm, greeting) {
+		if matchWordOrPhrase(norm, greeting) {
 			return "HUMAN", "HUMAN_" + strings.ToUpper(strings.ReplaceAll(greeting, " ", "_"))
 		}
 	}
 
-	return "HUMAN", "HUMAN_NATURAL_SPEECH"
+	// 3. Texto falado que não corresponde a nenhuma saudação positiva (ex: ruído de fundo, TV, áudio ininteligível)
+	return "MACHINE", "UNCONFIRMED_AUDIO"
 }
 

@@ -26,9 +26,9 @@ services:
       - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,37.60.228.113,*
       - MAX_GLOBAL_CHANNELS=120
       - HUMAN_RESERVED_QUOTA=10
-      - MIN_CHANNELS_PER_AGENT=7
+      - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789393839
+      - UPDATE_TIMESTAMP=1789395784
     volumes:
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
     ports:

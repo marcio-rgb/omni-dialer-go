@@ -15,16 +15,17 @@ $$\text{ChannelsToDial} = \max\left(\text{AvailableAgents} \times \text{MinChann
 
 Onde:
 * $\text{AvailableAgents}$: Quantidade de operadores com status livre/ocioso (`idle`) associados à campanha no Redis.
-* $\text{MinChannelsPerAgent}$: Piso mínimo de canais simultâneos por operador disponível (padrão rígido: `7`, configurável via `MIN_CHANNELS_PER_AGENT` ou dinamicamente por requisição via `min_channels_per_agent`). Garante proporção mínima de **7:1** para acelerar o ritmo de discagem e erradicar ociosidade de PAs.
+* $\text{MinChannelsPerAgent}$: Piso de canais simultâneos por operador disponível (default seguro: `2`, configurável dinamicamente via `GET/POST /api/v1/predictive/pacing`, variável de ambiente `MIN_CHANNELS_PER_AGENT` ou por requisição em `min_channels_per_agent`). Permite calibrar a agressividade entre `1` e `50` canais por atendente sem reiniciar a aplicação.
 * $\text{Aggressiveness}$: Fator multiplicador configurado na campanha ou enviado dinamicamente no payload `PredictiveDemandRequest` (`aggressiveness`) (padrão: `1.20`, variando de `1.00` a `2.50`).
 * $\text{ContactProbability}$: Taxa histórica móvel de sucesso de atendimento humano (padrão conservador de boot: `0.28` ou 28%).
 * $\text{ChannelsToDial}$: Quantidade de chamadas simultâneas que o discador tentará originar no Asterisk.
 
-### 1.2. Regra de Piso Mínimo de 7 Canais por Operador Disponível
-Mesmo sob condições adversas ou desaceleração pós-abandono regulatório (`hasInflated`), a demanda de discagem preditiva nunca decai abaixo de `AvailableAgents × 7` (a menos que haja esgotamento da capacidade física de troncos SIP ou da quota global de segurança humana):
-* **1 operador disponível:** Mínimo de 7 chamadas originadas.
-* **2 operadores disponíveis:** Mínimo de 14 chamadas originadas.
-* **$N$ operadores disponíveis:** Mínimo de $N \times 7$ chamadas originadas.
+### 1.2. Regra de Piso Configurável por Operador Disponível
+Mesmo sob condições adversas ou desaceleração pós-abandono regulatório (`hasInflated`), a demanda de discagem preditiva obedece ao piso configurado `AvailableAgents × MinChannelsPerAgent` (a menos que haja esgotamento da capacidade física de troncos SIP ou da quota global de segurança humana):
+* **1 operador disponível:** Mínimo de $1 \times \text{minRatio}$ chamadas originadas (default: 2).
+* **2 operadores disponíveis:** Mínimo de $2 \times \text{minRatio}$ chamadas originadas (default: 4).
+* **$N$ operadores disponíveis:** Mínimo de $N \times \text{minRatio}$ chamadas originadas.
+* **Ajuste Dinâmico a Quente:** A taxa pode ser alterada instantaneamente via `POST /api/v1/predictive/pacing` sem reiniciar o discador.
 
 ---
 
@@ -61,14 +62,15 @@ Para evitar bloqueios de operadoras (SPAM / Robo-call flag):
 
 ---
 
-## 5. Triagem Ativa de Voz & Detecção de Caixa Postal / Silêncio
+## 5. Triagem Ativa de Voz & Avaliação Positiva de Atendimento
 
 1. **Triagem Ativa Full-Duplex (Vosk STT via EAGI):**
-   - No atendimento da chamada, o Asterisk executa [`cmd/vosk-eagi`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go), que reproduz o áudio estruturado em background enquanto escuta e transcreve a resposta do cliente no canal de áudio em tempo real via `FD 3` conectado ao Kaldi-Vosk.
-2. **Critérios Determinísticos de Classificação:**
-   - **Confirmação Humana:** Saudações humanas habituais (*"alô"*, *"oi"*, *"pronto"*, *"quem fala"*) ou fala natural contínua classificam a chamada como `HUMAN`. O Asterisk emite `UserEvent(PredictiveHuman)` e comuta a chamada para a sala do operador ou IA.
+   - No atendimento da chamada, o Asterisk executa [`cmd/vosk-eagi`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go), que reproduz a saudação natural estruturada em 8000 Hz (`alo_tudo_bem.wav`/`alo_tudo_bem.alaw`) em background enquanto escuta e transcreve a resposta do cliente no canal de áudio em tempo real via `FD 3` conectado ao Kaldi-Vosk.
+2. **Critérios Determinísticos de Avaliação Positiva:**
+   - **Confirmação Humana Positiva:** Apenas saudações e termos positivos explícitos (*"alô"*, *"oi"*, *"pronto"*, *"sim"*, *"quem fala"*, *"opa"*, *"bom dia"*, *"boa tarde"*, *"sou eu"*, *"fala"*, *"diga"*) validados com fronteiras exatas de palavras classificam a chamada como `HUMAN`. O Asterisk emite `UserEvent(PredictiveHuman)` e comuta a chamada para a sala do operador.
    - **Caixa Postal Explícita:** Termos de operadora (*"caixa postal"*, *"deixe seu recado"*, *"após o sinal"*, *"vivo informa"*, etc.) classificam a chamada como `MACHINE` com causa `VOICEMAIL_<FRASE>`.
-   - **Silêncio Absoluto (Zero Transcrição):** Caso a chamada seja atendida e não haja fala alguma durante a janela de triagem (`normFull == ""`), **o silêncio é rigorosamente considerado como caixa postal** (`status = MACHINE`, `cause = VOICEMAIL_SILENCE`).
+   - **Silêncio ou Áudio Não Confirmado:** Se a janela de triagem (~3,0s) expirar em silêncio (`norm == ""`) ou com ruído ininteligível sem palavra humana positiva, a chamada é classificada como `MACHINE` (`cause = SILENCE_TIMEOUT` ou `cause = UNCONFIRMED_AUDIO`). O discador **não transfere para operadores**, evitando sobrecarga e picos de abandono.
 3. **Notificação e Descarte no PBX:**
    - Ao confirmar `MACHINE`, o Asterisk dispara `UserEvent(PredictiveMachine, ..., Cause: ${VOSK_AMD_CAUSE})` e executa `Hangup()`.
    - O `TrunkManager` seta a disposição da chamada como `VOICEMAIL` em memória, assegurando registro fidedigno nos CDRs e permitindo que a stored procedure `fn_audit_persist_predictive_result` requebre o lead para retentativa (`status = 'QUEUED'`).
+

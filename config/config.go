@@ -42,9 +42,9 @@ func Load() (*Config, error) {
 	useSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
 	maxChannels, _ := strconv.Atoi(getEnv("MAX_GLOBAL_CHANNELS", "120"))
 	humanQuota, _ := strconv.Atoi(getEnv("HUMAN_RESERVED_QUOTA", "10"))
-	minChannelsPerAgent, _ := strconv.Atoi(getEnv("MIN_CHANNELS_PER_AGENT", "7"))
+	minChannelsPerAgent, _ := strconv.Atoi(getEnv("MIN_CHANNELS_PER_AGENT", "2"))
 	if minChannelsPerAgent <= 0 {
-		minChannelsPerAgent = 7
+		minChannelsPerAgent = 2
 	}
 
 	whitelistRaw := getEnv("INITIAL_WHITELIST_IPS", "127.0.0.1,::1")

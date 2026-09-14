@@ -379,7 +379,18 @@ func TestPredictiveEngine_MinChannelsPerAgentFloor(t *testing.T) {
 
 	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
 
-	// Caso 1: 1 agente disponível -> Deve disparar no mínimo 7 chamadas (piso padrão)
+	// Valida default dinâmico = 2
+	if engine.GetMinChannelsPerAgent() != 2 {
+		t.Fatalf("esperava default de 2 canais por agente, obteve %d", engine.GetMinChannelsPerAgent())
+	}
+
+	// Configura dinamicamente para 7 canais por agente via SetMinChannelsPerAgent
+	engine.SetMinChannelsPerAgent(7)
+	if engine.GetMinChannelsPerAgent() != 7 {
+		t.Fatalf("esperava taxa configurada de 7 canais por agente, obteve %d", engine.GetMinChannelsPerAgent())
+	}
+
+	// Caso 1: 1 agente disponível -> Deve disparar no mínimo 7 chamadas (piso configurado 7:1)
 	req1 := &domain.PredictiveDemandRequest{
 		TenantID:   "tenant-test",
 		CampaignID: "camp-floor",

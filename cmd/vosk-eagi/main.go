@@ -45,7 +45,7 @@ func main() {
 		wsURL = "ws://127.0.0.1:2700"
 	}
 
-	maxDuration := 2.8 // Janela otimizada: ~1.1s para áudio "Alô, tudo bem!?" + ~1.7s para resposta do cliente
+	maxDuration := 3.0 // Janela otimizada: ~1.4s para áudio "Alô, tudo bem!?" + ~1.6s para resposta positiva do cliente
 	if envDur := os.Getenv("VOSK_MAX_DURATION_SEC"); envDur != "" {
 		if d, err := strconv.ParseFloat(envDur, 64); err == nil && d > 0 {
 			maxDuration = d
@@ -107,7 +107,7 @@ func main() {
 
 				// 1. Checagem de Caixa Postal / Operadora
 				for _, phrase := range voicemailPhrases {
-					if strings.Contains(current, phrase) || strings.Contains(fullText, phrase) {
+					if matchWordOrPhrase(current, phrase) || matchWordOrPhrase(fullText, phrase) {
 						status = "MACHINE"
 						cause = "VOICEMAIL_" + strings.ToUpper(strings.ReplaceAll(phrase, " ", "_"))
 						break
@@ -119,9 +119,9 @@ func main() {
 					break
 				}
 
-				// 2. Checagem de Saudação / Confirmação Humana ("Alô", "Sim, sou eu", etc.)
+				// 2. Checagem de Saudação / Confirmação Humana Positiva ("Alô", "Sim", "Pronto", etc.)
 				for _, greeting := range humanGreetings {
-					if strings.Contains(current, greeting) || strings.Contains(fullText, greeting) {
+					if matchWordOrPhrase(current, greeting) || matchWordOrPhrase(fullText, greeting) {
 						status = "HUMAN"
 						cause = "HUMAN_" + strings.ToUpper(strings.ReplaceAll(greeting, " ", "_"))
 						break

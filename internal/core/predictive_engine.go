@@ -24,26 +24,36 @@ type PredictiveEngine struct {
 	trunks              ports.TrunkRepository
 	leads               ports.LeadRepository
 	roundRobinIdx       uint64
-	minChannelsPerAgent int
+	minChannelsPerAgent atomic.Int32
 }
 
 func NewPredictiveEngine(ami ports.AMIPort, channels *ChannelManager, cache ports.CachePort, campaigns ports.CampaignRepository, trunks ports.TrunkRepository, leads ports.LeadRepository) *PredictiveEngine {
-	return &PredictiveEngine{
-		ami:                 ami,
-		channels:            channels,
-		cache:               cache,
-		campaigns:           campaigns,
-		trunks:              trunks,
-		leads:               leads,
-		minChannelsPerAgent: 7,
+	pe := &PredictiveEngine{
+		ami:       ami,
+		channels:  channels,
+		cache:     cache,
+		campaigns: campaigns,
+		trunks:    trunks,
+		leads:     leads,
+	}
+	pe.minChannelsPerAgent.Store(2)
+	return pe
+}
+
+// SetMinChannelsPerAgent configura o piso de canais simultâneos originados por usuário disponível de forma thread-safe.
+func (pe *PredictiveEngine) SetMinChannelsPerAgent(minChannels int) {
+	if minChannels > 0 {
+		pe.minChannelsPerAgent.Store(int32(minChannels))
 	}
 }
 
-// SetMinChannelsPerAgent configura o piso mínimo de canais simultâneos originados por usuário disponível.
-func (pe *PredictiveEngine) SetMinChannelsPerAgent(minChannels int) {
-	if minChannels > 0 {
-		pe.minChannelsPerAgent = minChannels
+// GetMinChannelsPerAgent retorna a taxa configurada de canais simultâneos por operador disponível.
+func (pe *PredictiveEngine) GetMinChannelsPerAgent() int {
+	val := int(pe.minChannelsPerAgent.Load())
+	if val <= 0 {
+		return 2
 	}
+	return val
 }
 
 // ProcessDemand processa a requisição síncrona POST /api/v1/predictive/demand e calcula os disparos.
@@ -149,11 +159,8 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 	rawChannels := (float64(numAgents) / contactProbability) * (1.0 + (ringTime / talkTime)) * aggressiveness
 	calculatedDemand := int(math.Ceil(rawChannels))
 
-	// Piso mínimo: discar no mínimo 7 canais/chamadas ("ramais") por usuário disponível
-	minRatio := pe.minChannelsPerAgent
-	if minRatio <= 0 {
-		minRatio = 7
-	}
+	// Piso mínimo: discar taxa configurada de canais/chamadas por usuário disponível (default = 2:1)
+	minRatio := pe.GetMinChannelsPerAgent()
 	if req.MinChannelsPerAgent != nil && *req.MinChannelsPerAgent > 0 {
 		minRatio = *req.MinChannelsPerAgent
 	}

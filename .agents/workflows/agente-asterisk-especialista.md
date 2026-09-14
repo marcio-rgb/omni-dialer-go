@@ -36,19 +36,22 @@ sequenceDiagram
     Core->>Telco: SIP INVITE (100 Trying -> 180 Ringing)
     Telco-->>Core: 200 OK (Cliente Atendeu)
     Core->>Dialplan: Entra no context [triagem-amd]
-    Dialplan->>Dialplan: Answer() + Inicia MixMonitor(.wav,b)
-    Dialplan->>EAGI: Dispara EAGI(vosk-eagi, ${AUDIO_NAME}, ${WORK_WORD})
-    par Reprodução de Áudio Ativo (TX)
-        EAGI->>Core: AGI EXEC Background(saudacao & work_word & falo_com & nome)
+    Dialplan->>Dialplan: Inicia MixMonitor(.wav) no ms 0 + Answer()
+    Dialplan->>EAGI: Dispara EAGI(vosk-eagi)
+    par Reprodução de Saudação Ativa em 8kHz (TX)
+        EAGI->>Core: AGI EXEC Background(alo_tudo_bem) [8000 Hz / alaw]
     and Escuta Concorrente em Tempo Real (RX no FD 3)
         Core->>EAGI: Stream de Áudio do Cliente (PCM 16-bit 8kHz via FD 3)
         EAGI->>Vosk: Chunks de 100ms via WebSocket RFC 6455
-        Vosk-->>EAGI: Transcrição Parcial / Completa
+        Vosk-->>EAGI: Transcrição Parcial / Completa com casamento estrito de palavras
     end
     alt Caixa Postal / Mensagem de Operadora Detectada
         EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: VOICEMAIL_...)
         Dialplan->>Core: Hangup() -> Descarte Silencioso Imediato
-    else Cliente Falou / Confirmou ("Alô", "Sim", "Sou eu") ou Fallback Seguro
+    else Silêncio (~3s) ou Ruído sem Confirmação Positiva
+        EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: SILENCE_TIMEOUT / UNCONFIRMED_AUDIO)
+        Dialplan->>Core: Hangup() -> Descarte Imediato (Não repassa para operador, zero abandono)
+    else Confirmação Humana Positiva ("Alô", "Oi", "Pronto", "Sim", "Quem fala")
         EAGI-->>Dialplan: VOSK_AMD_STATUS=HUMAN (Causa: HUMAN_...)
         Dialplan->>AMI: UserEvent(PredictiveHuman, Channel, Phone, LeadId)
         AMI->>Core: Redirect(Channel, cos-all, 9999) -> Entrega Imediata ao LiveKit

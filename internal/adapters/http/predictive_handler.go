@@ -59,3 +59,65 @@ func (h *PredictiveHandler) Demand(w http.ResponseWriter, r *http.Request) {
 		"data":    resp,
 	})
 }
+
+// GetPacing retorna a taxa configurada de chamadas simultâneas por operador disponível.
+//
+// @pattern Strategy (Context / Predictive)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#1-algoritmo-de-pacing-e-equações-de-overdialing
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+//
+// @postExecution
+// - Retorna JSON com o valor numérico de min_channels_per_agent atual
+func (h *PredictiveHandler) GetPacing(w http.ResponseWriter, r *http.Request) {
+	minRatio := h.engine.GetMinChannelsPerAgent()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"min_channels_per_agent": minRatio,
+			"description":            "Taxa de chamadas simultaneas disparadas por operador disponivel",
+		},
+	})
+}
+
+// SetPacing atualiza dinamicamente a taxa de chamadas simultâneas por operador disponível.
+//
+// @pattern Strategy (Context / Predictive)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md#1-algoritmo-de-pacing-e-equações-de-overdialing
+//
+// @preExecution
+// - Validação de autorização IP em: `httpAdapter.IPWhitelistMiddleware`
+// - Validação de payload numérico: `min_channels_per_agent` deve estar entre 1 e 50
+//
+// @postExecution
+// - Atualização atômica em memória via `engine.SetMinChannelsPerAgent`
+// - Resposta RFC 7807 em caso de validação inválida
+func (h *PredictiveHandler) SetPacing(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		MinChannelsPerAgent int `json:"min_channels_per_agent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
+		return
+	}
+
+	if body.MinChannelsPerAgent < 1 || body.MinChannelsPerAgent > 50 {
+		domain.NewErrBadRequest("INVALID_PACING_RATIO", "min_channels_per_agent deve ser um inteiro entre 1 e 50").WriteJSON(w)
+		return
+	}
+
+	h.engine.SetMinChannelsPerAgent(body.MinChannelsPerAgent)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"min_channels_per_agent": body.MinChannelsPerAgent,
+			"message":                "Taxa de discagem por operador disponivel atualizada com sucesso",
+		},
+	})
+}

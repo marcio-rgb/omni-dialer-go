@@ -71,8 +71,8 @@ sequenceDiagram
     Handler-->>Client: 200 OK
 
     Note over AMI,Dialplan: Atendimento Telefônico
-    AMI->>Dialplan: Answer() & MixMonitor() & AMD()
-    alt Humano Detectado
+    AMI->>Dialplan: Inicia MixMonitor() no ms 0 & Answer() & Vosk EAGI(alo_tudo_bem)
+    alt Confirmação Humana Positiva ("Alô", "Oi", "Sim", "Pronto", "Quem fala")
         Dialplan->>AMI: UserEvent(PredictiveHuman)
         AMI->>TrunkMgr: Evento UserEvent
         TrunkMgr->>Engine: HandlePredictiveHuman(channel, uniqueID, phone, campaignID)
@@ -84,8 +84,8 @@ sequenceDiagram
             Engine->>Cache: SetInflatedSuccessRate(30s)
             Engine->>AMI: Hangup(Cause 16)
         end
-    else Caixa Postal / Silêncio Detectado
-        Dialplan->>AMI: UserEvent(PredictiveMachine)
+    else Caixa Postal / Silêncio / Áudio Não Confirmado
+        Dialplan->>AMI: UserEvent(PredictiveMachine, Cause: SILENCE_TIMEOUT / VOICEMAIL_...)
         AMI->>TrunkMgr: Evento UserEvent -> SetCallDisposition(VOICEMAIL)
         Dialplan->>AMI: Hangup(Cause 16)
     else Atendimento por IA (Bot)

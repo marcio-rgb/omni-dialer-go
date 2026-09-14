@@ -51,7 +51,13 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 		}
 
 		protected.Route("/api/v1", func(api chi.Router) {
-			// 1. Preditivo & Demanda
+			// 1. Preditivo, Demanda & Pacing
+			api.Route("/predictive", func(pred chi.Router) {
+				pred.Post("/demand", handlers.Predictive.Demand)
+				pred.Get("/pacing", handlers.Predictive.GetPacing)
+				pred.Post("/pacing", handlers.Predictive.SetPacing)
+				pred.Put("/pacing", handlers.Predictive.SetPacing)
+			})
 			api.Post("/predictive/demand", handlers.Predictive.Demand)
 
 			// 2. Chamadas Manuais
