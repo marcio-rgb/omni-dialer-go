@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,13 +47,13 @@ func TestLevenshtein(t *testing.T) {
 }
 
 func TestFuzzyContainsPhrase(t *testing.T) {
-	if !fuzzyContainsPhrase("esta e a caixa postar da vivo", "caixa postal", 1) {
+	if !fuzzyContainsPhrase(strings.Fields("esta e a caixa postar da vivo"), strings.Fields("caixa postal"), 1) {
 		t.Errorf("esperava casar 'caixa postar' com 'caixa postal' com distancia 1")
 	}
-	if !fuzzyContainsPhrase("favor deixa seu recado apos o sinal", "deixe seu recado", 2) {
+	if !fuzzyContainsPhrase(strings.Fields("favor deixa seu recado apos o sinal"), strings.Fields("deixe seu recado"), 2) {
 		t.Errorf("esperava casar com tolerancia 2")
 	}
-	if fuzzyContainsPhrase("bom dia tudo bem", "caixa postal", 1) {
+	if fuzzyContainsPhrase(strings.Fields("bom dia tudo bem"), strings.Fields("caixa postal"), 1) {
 		t.Errorf("nao devia casar frase totalmente diferente")
 	}
 }

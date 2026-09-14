@@ -57,7 +57,7 @@ func main() {
 	}
 
 	// Carrega personalização dinâmica do AMD salva pelo Dialer-Go se houver
-	loadDynamicConfig(&maxDuration)
+	LoadDynamicConfig(&maxDuration)
 
 	wsClient, err := connectWebSocket(wsURL, 1500*time.Millisecond)
 	if err != nil {
@@ -126,13 +126,16 @@ func main() {
 				}
 
 				// 1. Checagem prioritária e inequívoca de Caixa Postal / Operadora com tolerância fonética
+				currWords := strings.Fields(current)
+				fullWords := strings.Fields(fullText)
 				for _, phrase := range highConfidenceVM {
 					normPhrase := normalizeText(phrase)
+					targetWords := strings.Fields(normPhrase)
 					maxTolerance := 1
-					if len(strings.Fields(normPhrase)) > 2 {
+					if len(targetWords) > 2 {
 						maxTolerance = 2
 					}
-					if fuzzyContainsPhrase(current, normPhrase, maxTolerance) || fuzzyContainsPhrase(fullText, normPhrase, maxTolerance) {
+					if fuzzyContainsPhrase(currWords, targetWords, maxTolerance) || fuzzyContainsPhrase(fullWords, targetWords, maxTolerance) {
 						status = "MACHINE"
 						cause = "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
 						break
