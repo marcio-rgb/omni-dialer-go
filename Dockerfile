@@ -10,12 +10,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/dialer-go ./cmd/d
 
 # Runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata curl tar \
+    && mkdir -p /app/bin \
+    && curl -sL https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz | tar -xzC /app/bin \
+    && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/dialer-go .
-COPY bin/ ./bin/
 COPY models/ ./models/
 COPY amd.conf ./amd.conf
 
