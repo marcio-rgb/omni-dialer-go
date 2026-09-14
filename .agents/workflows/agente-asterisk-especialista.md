@@ -48,11 +48,8 @@ sequenceDiagram
     alt Caixa Postal / Mensagem de Operadora Detectada
         EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: VOICEMAIL_...)
         Dialplan->>Core: Hangup() -> Descarte Silencioso Imediato
-    else Silêncio (~3s) ou Ruído sem Confirmação Positiva
-        EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: SILENCE_TIMEOUT / UNCONFIRMED_AUDIO)
-        Dialplan->>Core: Hangup() -> Descarte Imediato (Não repassa para operador, zero abandono)
-    else Confirmação Humana Positiva ("Alô", "Oi", "Pronto", "Sim", "Quem fala")
-        EAGI-->>Dialplan: VOSK_AMD_STATUS=HUMAN (Causa: HUMAN_...)
+    else Atendimento Humano (Saudação "Alô/Quem fala", Fala Natural ou Silêncio de Escuta)
+        EAGI-->>Dialplan: VOSK_AMD_STATUS=HUMAN (Causa: HUMAN_... / HUMAN_SILENCE_ASSUMED / HUMAN_NATURAL_SPEECH)
         Dialplan->>AMI: UserEvent(PredictiveHuman, Channel, Phone, LeadId)
         AMI->>Core: Redirect(Channel, cos-all, 9999) -> Entrega Imediata ao LiveKit
         Core->>Agent: Conecta áudio com Headers SIP (X-Lead-Name com acentos)

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -26,50 +25,110 @@ func TestNormalizeText(t *testing.T) {
 	}
 }
 
+func TestLevenshtein(t *testing.T) {
+	cases := []struct {
+		a, b     string
+		expected int
+	}{
+		{"caixa", "caixa", 0},
+		{"caixa postal", "caixa postar", 1},
+		{"alo", "ala", 1},
+		{"recado", "recados", 1},
+		{"", "teste", 5},
+	}
+
+	for _, tc := range cases {
+		dist := levenshtein(tc.a, tc.b)
+		if dist != tc.expected {
+			t.Errorf("levenshtein(%q, %q) = %d; esperado %d", tc.a, tc.b, dist, tc.expected)
+		}
+	}
+}
+
+func TestFuzzyContainsPhrase(t *testing.T) {
+	if !fuzzyContainsPhrase("esta e a caixa postar da vivo", "caixa postal", 1) {
+		t.Errorf("esperava casar 'caixa postar' com 'caixa postal' com distancia 1")
+	}
+	if !fuzzyContainsPhrase("favor deixa seu recado apos o sinal", "deixe seu recado", 2) {
+		t.Errorf("esperava casar com tolerancia 2")
+	}
+	if fuzzyContainsPhrase("bom dia tudo bem", "caixa postal", 1) {
+		t.Errorf("nao devia casar frase totalmente diferente")
+	}
+}
+
 func TestVoicemailPhrasesDetection(t *testing.T) {
 	testSamples := []string{
 		"esta e a caixa postal de marcio deixe seu recado",
 		"sua chamada esta sendo encaminhada para a caixa de mensagens",
-		"o numero para o qual voce ligou esta impossibilitado de atender",
+		"o numero para o qual voce ligou esta temporariamente fora de servico",
 		"vivo informa este numero nao pode receber chamadas",
 	}
 
 	for _, sample := range testSamples {
-		norm := normalizeText(sample)
-		found := false
-		for _, phrase := range voicemailPhrases {
-			if strings.Contains(norm, phrase) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("amostra de voicemail %q nao foi detectada pelo dicionario", sample)
+		status, reason := ClassifyCall(CallMetrics{FullText: sample})
+		if status != "MACHINE" {
+			t.Errorf("amostra de voicemail %q nao foi detectada como MACHINE, obteve %q (%s)", sample, status, reason)
 		}
 	}
 }
 
 func TestHumanGreetingsDetection(t *testing.T) {
-	testSamples := []string{
-		"alo quem fala",
-		"sim sou eu mesmo",
-		"boa tarde pois nao",
-		"opa pode falar",
-		"e ele o que deseja",
+	testSamples := []struct {
+		text string
+	}{
+		{"alo quem fala"},
+		{"sim sou eu mesmo"},
+		{"boa tarde pois nao"},
+		{"opa pode falar"},
+		{"quem fala"},
+		{"quem e"},
+		{"alo"},
+		{"pronto"},
+		{"fala ai"},
+		{"tudo bem"},
 	}
 
 	for _, sample := range testSamples {
-		norm := normalizeText(sample)
-		found := false
-		for _, greeting := range humanGreetings {
-			if strings.Contains(norm, greeting) {
-				found = true
-				break
-			}
+		status, reason := ClassifyCall(CallMetrics{FullText: sample.text})
+		if status != "HUMAN" {
+			t.Errorf("amostra humana %q nao foi detectada como HUMAN, obteve %q (%s)", sample.text, status, reason)
 		}
-		if !found {
-			t.Errorf("amostra humana %q nao foi detectada pelo dicionario", sample)
+	}
+}
+
+func TestClassifyCall_SilenceAssumesHuman(t *testing.T) {
+	silenceCases := []string{
+		"",
+		"   ",
+		"\t\n",
+	}
+
+	for _, tc := range silenceCases {
+		status, cause := ClassifyCall(CallMetrics{FullText: tc})
+		if status != "HUMAN" {
+			t.Errorf("para silêncio %q, esperava status HUMAN, obteve %q", tc, status)
 		}
+		if cause != "HUMAN_NATURAL_PAUSE" {
+			t.Errorf("para silêncio %q, esperava causa HUMAN_NATURAL_PAUSE, obteve %q", tc, cause)
+		}
+	}
+}
+
+func TestClassifyCall_ContinuousMonologue(t *testing.T) {
+	monologue := "atencao cliente do banco esta e uma mensagem de cobranca automatica favor comparecer a uma agencia"
+	metrics := CallMetrics{
+		FullText:          monologue,
+		SpeechDurationSec: 5.0,
+		SilenceAfterSec:   0.2,
+	}
+
+	status, reason := ClassifyCall(metrics)
+	if status != "MACHINE" {
+		t.Errorf("esperava MACHINE para monólogo contínuo longo, obteve %q", status)
+	}
+	if reason != "CONTINUOUS_MONOLOGUE_DETECTED" {
+		t.Errorf("esperava CONTINUOUS_MONOLOGUE_DETECTED, obteve %q", reason)
 	}
 }
 
@@ -79,99 +138,14 @@ func TestLoadDynamicConfig(t *testing.T) {
 	content := `{
 		"vosk_max_duration_sec": 4.5,
 		"voicemail_phrases": ["customizada recado"],
-		"humanGreetings": ["fala parceiro"]
+		"human_greetings": ["fala parceiro"]
 	}`
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	dur := 6.0
-	// loadDynamicConfig checks specific paths, but we can verify default duration
 	if dur != 6.0 {
 		t.Errorf("esperava 6.0, obteve %f", dur)
 	}
 }
-
-func TestClassifyOutcome_SilenceRejectsToMachine(t *testing.T) {
-	silenceCases := []string{
-		"",
-		"   ",
-		"\t\n",
-	}
-
-	for _, tc := range silenceCases {
-		status, cause := ClassifyOutcome(tc, nil, nil)
-		if status != "MACHINE" {
-			t.Errorf("para silêncio %q, esperava status MACHINE, obteve %q", tc, status)
-		}
-		if cause != "SILENCE_TIMEOUT" {
-			t.Errorf("para silêncio %q, esperava causa SILENCE_TIMEOUT, obteve %q", tc, cause)
-		}
-	}
-}
-
-func TestClassifyOutcome_UnconfirmedAudioRejectsToMachine(t *testing.T) {
-	unconfirmedCases := []string{
-		"noticiario nacional das oito",
-		"som de televisao ligada",
-		"barulho estatica chiado",
-	}
-
-	for _, tc := range unconfirmedCases {
-		status, cause := ClassifyOutcome(tc, nil, nil)
-		if status != "MACHINE" {
-			t.Errorf("para ruído/não-humano %q, esperava status MACHINE, obteve %q", tc, status)
-		}
-		if cause != "UNCONFIRMED_AUDIO" {
-			t.Errorf("para ruído/não-humano %q, esperava causa UNCONFIRMED_AUDIO, obteve %q", tc, cause)
-		}
-	}
-}
-
-func TestClassifyOutcome_VoicemailPhrases(t *testing.T) {
-	cases := []struct {
-		input         string
-		expectedCause string
-	}{
-		{"deixe seu recado apos o sinal", "VOICEMAIL_DEIXE_RECADO"},
-		{"esta e a caixa postal da vivo", "VOICEMAIL_CAIXA_POSTAL"},
-		{"o numero chamado nao esta disponivel", "VOICEMAIL_NAO_ESTA_DISPONIVEL"},
-		{"alo deixe recado", "VOICEMAIL_DEIXE_RECADO"}, // Caixa postal tem precedência
-	}
-
-	for _, tc := range cases {
-		status, cause := ClassifyOutcome(tc.input, nil, nil)
-		if status != "MACHINE" {
-			t.Errorf("para %q, esperava status MACHINE, obteve %q", tc.input, status)
-		}
-		if !strings.HasPrefix(cause, "VOICEMAIL_") {
-			t.Errorf("para %q, esperava causa prefixada por VOICEMAIL_, obteve %q", tc.input, cause)
-		}
-	}
-}
-
-func TestClassifyOutcome_HumanSpeech(t *testing.T) {
-	cases := []struct {
-		input         string
-		expectedCause string
-	}{
-		{"alo", "HUMAN_ALO"},
-		{"tudo bem quem fala", "HUMAN_QUEM_FALA"},
-		{"tudo bem", "HUMAN_TUDO_BEM"},
-		{"opa bom dia", "HUMAN_OPA"},
-		{"sim com quem", "HUMAN_SIM"},
-		{"pronto pode falar", "HUMAN_PRONTO"},
-		{"sou eu mesma", "HUMAN_SOU_EU"},
-	}
-
-	for _, tc := range cases {
-		status, cause := ClassifyOutcome(tc.input, nil, nil)
-		if status != "HUMAN" {
-			t.Errorf("para %q, esperava status HUMAN, obteve %q", tc.input, status)
-		}
-		if !strings.HasPrefix(cause, "HUMAN_") {
-			t.Errorf("para %q, esperava causa prefixada por HUMAN_, obteve %q", tc.input, cause)
-		}
-	}
-}
-

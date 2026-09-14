@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -30,6 +33,7 @@ func main() {
 		return
 	}
 	defer audioFile.Close()
+	_ = syscall.SetNonblock(3, false)
 
 	audioName := ""
 	workWord := ""
@@ -45,7 +49,7 @@ func main() {
 		wsURL = "ws://127.0.0.1:2700"
 	}
 
-	maxDuration := 3.0 // Janela otimizada: ~1.4s para áudio "Alô, tudo bem!?" + ~1.6s para resposta positiva do cliente
+	maxDuration := 3.5 // Janela de 3.5s: 1.1s para áudio "Olá, tudo bem!?" + 2.4s para resposta do cliente
 	if envDur := os.Getenv("VOSK_MAX_DURATION_SEC"); envDur != "" {
 		if d, err := strconv.ParseFloat(envDur, 64); err == nil && d > 0 {
 			maxDuration = d
@@ -75,6 +79,8 @@ func main() {
 	cause := "PENDING"
 	fullText := ""
 	startTime := time.Now()
+	var firstSpeechTime time.Time
+	var lastSpeechTime time.Time
 
 	chunkBuf := make([]byte, 1600) // 100ms de áudio PCM 16-bit 8kHz
 
@@ -82,14 +88,22 @@ func main() {
 		n, readErr := audioFile.Read(chunkBuf)
 		if n > 0 {
 			if writeErr := wsClient.WriteBinary(chunkBuf[:n]); writeErr != nil {
+				agiVerbose(fmt.Sprintf("VOSK-EAGI: Erro ao enviar audio ao Vosk: %v", writeErr), 1)
 				break
 			}
 		}
 		if readErr != nil {
+			if errors.Is(readErr, syscall.EAGAIN) || errors.Is(readErr, syscall.EWOULDBLOCK) {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if !errors.Is(readErr, io.EOF) {
+				agiVerbose(fmt.Sprintf("VOSK-EAGI: Leitura FD 3: %v", readErr), 1)
+			}
 			break
 		}
 
-		rawMsg, err := wsClient.ReadMessage(50 * time.Millisecond)
+		rawMsg, err := wsClient.ReadMessage(40 * time.Millisecond)
 		if err == nil && len(rawMsg) > 0 {
 			var vm VoskMessage
 			if jsonErr := json.Unmarshal(rawMsg, &vm); jsonErr == nil {
@@ -101,15 +115,26 @@ func main() {
 					current = part
 				}
 
-				if txt != "" && !strings.Contains(fullText, txt) {
-					fullText = strings.TrimSpace(fullText + " " + txt)
+				if current != "" {
+					if firstSpeechTime.IsZero() {
+						firstSpeechTime = time.Now()
+					}
+					lastSpeechTime = time.Now()
+					if !strings.Contains(fullText, current) {
+						fullText = strings.TrimSpace(fullText + " " + current)
+					}
 				}
 
-				// 1. Checagem de Caixa Postal / Operadora
-				for _, phrase := range voicemailPhrases {
-					if matchWordOrPhrase(current, phrase) || matchWordOrPhrase(fullText, phrase) {
+				// 1. Checagem prioritária e inequívoca de Caixa Postal / Operadora com tolerância fonética
+				for _, phrase := range highConfidenceVM {
+					normPhrase := normalizeText(phrase)
+					maxTolerance := 1
+					if len(strings.Fields(normPhrase)) > 2 {
+						maxTolerance = 2
+					}
+					if fuzzyContainsPhrase(current, normPhrase, maxTolerance) || fuzzyContainsPhrase(fullText, normPhrase, maxTolerance) {
 						status = "MACHINE"
-						cause = "VOICEMAIL_" + strings.ToUpper(strings.ReplaceAll(phrase, " ", "_"))
+						cause = "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
 						break
 					}
 				}
@@ -119,16 +144,19 @@ func main() {
 					break
 				}
 
-				// 2. Checagem de Saudação / Confirmação Humana Positiva ("Alô", "Sim", "Pronto", etc.)
-				for _, greeting := range humanGreetings {
-					if matchWordOrPhrase(current, greeting) || matchWordOrPhrase(fullText, greeting) {
+				// 2. Checagem imediata de Saudação / Confirmação Humana ("Alô", "Quem fala", "Oi", etc.)
+				paddedCurrent := " " + normalizeText(current) + " "
+				for _, greeting := range quickHumanGreetings {
+					normGreeting := normalizeText(greeting)
+					paddedGreeting := " " + normGreeting + " "
+					if strings.Contains(paddedCurrent, paddedGreeting) {
 						status = "HUMAN"
-						cause = "HUMAN_" + strings.ToUpper(strings.ReplaceAll(greeting, " ", "_"))
+						cause = "HUMAN_GREETING_BRIEF"
 						break
 					}
 				}
 
-				if status == "HUMAN" && strings.HasPrefix(cause, "HUMAN_") {
+				if status == "HUMAN" {
 					finished.Store(true)
 					break
 				}
@@ -138,20 +166,34 @@ func main() {
 
 	finished.Store(true)
 
-	if status != "MACHINE" {
+	if status != "MACHINE" && status != "HUMAN" {
 		_ = wsClient.WriteText(`{"eof" : 1}`)
 		if rawMsg, err := wsClient.ReadMessage(200 * time.Millisecond); err == nil && len(rawMsg) > 0 {
 			var vm VoskMessage
 			if jsonErr := json.Unmarshal(rawMsg, &vm); jsonErr == nil {
-				txt := normalizeText(vm.Text)
-				if txt != "" && !strings.Contains(fullText, txt) {
-					fullText = strings.TrimSpace(fullText + " " + txt)
+				candidate := normalizeText(vm.Text)
+				if candidate == "" {
+					candidate = normalizeText(vm.Partial)
+				}
+				if candidate != "" && !strings.Contains(fullText, candidate) {
+					fullText = strings.TrimSpace(fullText + " " + candidate)
+					if firstSpeechTime.IsZero() {
+						firstSpeechTime = time.Now()
+					}
+					lastSpeechTime = time.Now()
 				}
 			}
 		}
 
-		// Classificação final: saudações, termos de operadora, fala natural ou silêncio (VOICEMAIL_SILENCE)
-		status, cause = ClassifyOutcome(fullText, voicemailPhrases, humanGreetings)
+		metrics := CallMetrics{
+			FullText: fullText,
+		}
+		if !firstSpeechTime.IsZero() {
+			metrics.SpeechDurationSec = lastSpeechTime.Sub(firstSpeechTime).Seconds()
+			metrics.SilenceAfterSec = time.Since(lastSpeechTime).Seconds()
+		}
+
+		status, cause = ClassifyCall(metrics)
 	}
 
 	agiVerbose(fmt.Sprintf("VOSK-EAGI Concluido: STATUS=%s CAUSA=%s TEXTO='%s'", status, cause, fullText), 1)
