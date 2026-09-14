@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS leads (
     tenant_id VARCHAR(64) NOT NULL,
     cpf VARCHAR(14) NOT NULL,
     phone VARCHAR(32) NOT NULL,
+    name VARCHAR(255),
+    first_name VARCHAR(64),
+    work_word VARCHAR(64),
     status VARCHAR(32) NOT NULL DEFAULT 'NEW',
     attempts_count INTEGER NOT NULL DEFAULT 0,
     last_dialed_at TIMESTAMP WITH TIME ZONE,
@@ -83,8 +86,13 @@ CREATE TABLE IF NOT EXISTS leads (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_name VARCHAR(64);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS work_word VARCHAR(64);
+
 CREATE INDEX IF NOT EXISTS idx_leads_campaign_filo ON leads(campaign_id, status, last_dialed_at, id DESC);
 CREATE INDEX IF NOT EXISTS idx_leads_tenant ON leads(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_leads_first_name ON leads(first_name);
 
 -- 5. Tabela de CDRs (Call Detail Records)
 CREATE TABLE IF NOT EXISTS cdrs (
@@ -127,6 +135,8 @@ CREATE OR REPLACE FUNCTION fn_audit_claim_predictive_batch(
     tenant_id VARCHAR(64),
     cpf VARCHAR(14),
     phone VARCHAR(32),
+    name VARCHAR(255),
+    first_name VARCHAR(64),
     attempts_count INTEGER
 ) AS $$
 BEGIN
@@ -150,9 +160,9 @@ BEGIN
             last_dialed_at = CURRENT_TIMESTAMP
         FROM selected_leads s
         WHERE l.id = s.id
-        RETURNING l.id, l.campaign_id, l.tenant_id, l.cpf, l.phone, l.attempts_count
+        RETURNING l.id, l.campaign_id, l.tenant_id, l.cpf, l.phone, l.name, l.first_name, l.attempts_count
     )
-    SELECT u.id, u.campaign_id, u.tenant_id, u.cpf, u.phone, u.attempts_count
+    SELECT u.id, u.campaign_id, u.tenant_id, u.cpf, u.phone, u.name, u.first_name, u.attempts_count
     FROM updated_leads u;
 END;
 $$ LANGUAGE plpgsql;

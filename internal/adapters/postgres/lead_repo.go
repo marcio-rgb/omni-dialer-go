@@ -29,20 +29,37 @@ func (r *LeadRepo) BatchInsert(ctx context.Context, leads []*domain.Lead) (int64
 		return 0, nil
 	}
 
-	rows := make([][]interface{}, len(leads))
-	for i, l := range leads {
-		rows[i] = []interface{}{
-			l.CampaignID, l.TenantID, l.CPF, l.Phone, string(l.Status), l.AttemptsCount, time.Now(), l.Name,
+	const chunkSize = 5000
+	var totalInserted int64
+	now := time.Now()
+
+	for start := 0; start < len(leads); start += chunkSize {
+		end := start + chunkSize
+		if end > len(leads) {
+			end = len(leads)
 		}
+		chunk := leads[start:end]
+
+		rows := make([][]interface{}, len(chunk))
+		for i, l := range chunk {
+			rows[i] = []interface{}{
+				l.CampaignID, l.TenantID, l.CPF, l.Phone, string(l.Status), l.AttemptsCount, now, l.Name, l.FirstName, l.WorkWord,
+			}
+		}
+
+		copyCount, err := r.pool.CopyFrom(
+			ctx,
+			pgx.Identifier{"leads"},
+			[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at", "name", "first_name", "work_word"},
+			pgx.CopyFromRows(rows),
+		)
+		if err != nil {
+			return totalInserted, err
+		}
+		totalInserted += copyCount
 	}
 
-	copyCount, err := r.pool.CopyFrom(
-		ctx,
-		pgx.Identifier{"leads"},
-		[]string{"campaign_id", "tenant_id", "cpf", "phone", "status", "attempts_count", "created_at", "name"},
-		pgx.CopyFromRows(rows),
-	)
-	return copyCount, err
+	return totalInserted, nil
 }
 
 // FetchNextFILOBatch busca os leads respeitando o princípio FILO (id DESC) e cooldown de 2h
@@ -53,7 +70,7 @@ func (r *LeadRepo) FetchNextFILOBatch(ctx context.Context, campaignID string, li
 	cooldownThreshold := time.Now().Add(-time.Duration(cooldownHours) * time.Hour)
 
 	query := `
-		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at, COALESCE(name, '') as name
+		SELECT id, campaign_id, tenant_id, cpf, phone, status, attempts_count, last_dialed_at, dialed_at, created_at, COALESCE(name, '') as name, COALESCE(first_name, '') as first_name, COALESCE(work_word, '') as work_word
 		FROM leads
 		WHERE campaign_id = $1
 		  AND status IN ('NEW', 'QUEUED')
@@ -74,7 +91,7 @@ func (r *LeadRepo) FetchNextFILOBatch(ctx context.Context, campaignID string, li
 		var statusStr string
 		err := rows.Scan(
 			&l.ID, &l.CampaignID, &l.TenantID, &l.CPF, &l.Phone, &statusStr, &l.AttemptsCount,
-			&l.LastDialedAt, &l.DialedAt, &l.CreatedAt, &l.Name,
+			&l.LastDialedAt, &l.DialedAt, &l.CreatedAt, &l.Name, &l.FirstName, &l.WorkWord,
 		)
 		if err != nil {
 			return nil, err

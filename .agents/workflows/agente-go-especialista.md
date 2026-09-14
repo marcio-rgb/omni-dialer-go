@@ -90,9 +90,11 @@ graph TD
 - `CampaignSaturationData`: Métricas de queima de mailing (`BurnRatePercentage`, `RefillUrgency`, `EstimatedExhaustionH`).
 
 ### 3.3. Leads e Refill ([`lead.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/lead.go))
-- `Lead`: Registro de contato (`ID`, `CampaignID`, `TenantID`, `CPF`, `Phone`, `Name`, `Status`, `AttemptsCount`).
-- `Lead`: Registro telefônico individual (`ID`, `CampaignID`, `TenantID`, `CPF`, `Phone`, `Status`, `AttemptsCount`, `LastDialedAt`).
-- `RefillRequest` / `RefillResponse`: Ingestão atômica de arquivos compactados ZIP com CSV canônico.
+- `Lead`: Registro de contato (`ID`, `CampaignID`, `TenantID`, `CPF`, `Phone`, `Name` [original com acentos para LiveKit/CRM], `FirstName` [slug normalizado salvo no banco para lookup O(1) e Asterisk], `WorkWord` [órgão/convênio normalizado], `Status`, `AttemptsCount`, `LastDialedAt`, `DialedAt`, `CreatedAt`).
+- `BatchLeadItem`: Registro para carga em lote (`CPF`, `Phone`, `Name` [original], `FirstName` [pronúncia com acentos/pontuação], `WorkWord` [convênio/órgão], `AudioKey` [slug normalizado]).
+- `BatchLeadRequest` / `BatchLeadResponse`: Carga massiva JSON com pré-síntese de áudio deduped O(1) para até 200.000 leads.
+- `LeadQueueItem`: Item enfileirado no Redis (`Phone`, `CPF`, `Name` [original para LiveKit headers], `FirstName` [slug para AUDIO_NAME], `WorkWord` [slug para WORK_WORD], `LeadID`).
+- `RefillRequest` / `RefillResponse`: Ingestão atômica de arquivos compactados ZIP com CSV canônico (suportando aspas RFC 4180 e vírgulas no campo `first_name`).
 
 ### 3.4. Troncos SIP ([`trunk.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/trunk.go))
 - `Trunk`: Entidade relacional de rota SIP (`ID`, `TenantID`, `Direction`, `RegistrationMode`, `Host`, `Port`, `MaxChannels`, etc.).
@@ -239,8 +241,11 @@ ceil$$
 ### 5.7. `core.AudioWordManager` & `core.AudioConcatenator` ([`audio_word_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/audio_word_manager.go))
 - **`AudioConcatenator`:** Operador binário de concatenação de streams PCM WAV 16-bit mono com `TrimSilencePCM` automático (remoção de silêncio residual de síntese) e união contínua sem necessidade de pausas artificiais em milissegundos.
 - **`AudioWordManager`:**
-  - Gerenciador de cache físico particionado em `storage/audio_cache/{base,names,work_words}`.
-  - `EnsureNameAudio(ctx, rawName)`: **Síntese inteligente com acentos para máxima naturalidade fonética** e gravação com slug normalizado (`^[a-z0-9_]+$`) para proteção estrita do dialplan Asterisk (`${AUDIO_NAME}`).
+  - Gerenciador de cache físico particionado em `storage/audio_cache/{base,names,work_words}` com índice em memória `knownNames sync.Map` para lookups O(1) sub-microssegundo.
+  - `HasNameAudio(slug string) bool`: Verificação instantânea em memória O(1) evitando checagens de disco por lead.
+  - `EnsureNameAudio(ctx, rawName)`: Normalização do nome para slug seguro e síntese com acentos originais.
+  - `EnsureNameAudioWithKey(ctx, rawPronunciation, audioKey)`: Síntese pontuada (ex.: `"; Márcio? ;"`) gerando áudio com slug normalizado (ex.: `marcio.wav`).
+  - `BatchProcessNames(ctx, uniqueNames map[string]string) (map[string]bool, error)`: Agrupamento em lote que sintetiza apenas nomes únicos ausentes, otimizado para mailings massivos de 100k a 200k registros.
   - `UpsertWords(ctx context.Context, req domain.UpsertAudioWordsRequest)`: Síntese idempotente em lote com bypass de cache.
   - `GeneratePreview(ctx context.Context, req domain.AudioPreviewRequest)`: Montagem em memória e retorno binário do áudio de preview composto.
 

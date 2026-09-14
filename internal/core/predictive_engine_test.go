@@ -272,3 +272,69 @@ func TestPredictiveEngine_DynamicAggressiveness(t *testing.T) {
 	}
 }
 
+func TestPredictiveEngine_LeadNameOriginalAndAudioNameSlug(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-names",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 10, available: 10, dialed: 0}
+
+	leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+		Phone:     "5511999900001",
+		CPF:       "11122233344",
+		Name:      "MARCIO NASCIMENTO",
+		FirstName: "marcio",
+		WorkWord:  "governo_sp",
+		LeadID:    101,
+	})
+
+	cache := &mockCachePredictive{
+		queue: []string{string(leadJSON)},
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	req := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-names",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand falhou: %v", err)
+	}
+	if resp.DialingChannels != 1 {
+		t.Fatalf("esperava 1 canal disparado, obteve %d", resp.DialingChannels)
+	}
+
+	if ami.lastVars["LEAD_NAME"] != "MARCIO NASCIMENTO" {
+		t.Errorf("LEAD_NAME esperado 'MARCIO NASCIMENTO', obteve '%s'", ami.lastVars["LEAD_NAME"])
+	}
+	if ami.lastVars["AUDIO_NAME"] != "marcio" {
+		t.Errorf("AUDIO_NAME esperado 'marcio', obteve '%s'", ami.lastVars["AUDIO_NAME"])
+	}
+	if ami.lastVars["WORK_WORD"] != "governo_sp" {
+		t.Errorf("WORK_WORD esperado 'governo_sp', obteve '%s'", ami.lastVars["WORK_WORD"])
+	}
+}
+

@@ -188,3 +188,54 @@ func (c *captureTTS) Synthesize(ctx context.Context, text string, outputPath str
 func (c *captureTTS) GetSampleRate() int {
 	return c.sampleRate
 }
+
+func TestAudioWordManager_BatchProcessNamesAndEnsureWithKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	var synthesized []string
+	tts := &captureTTS{
+		sampleRate: 22050,
+		onSynthesize: func(text string) {
+			synthesized = append(synthesized, text)
+		},
+	}
+	concatenator := NewAudioConcatenator()
+	mgr, err := NewAudioWordManager(tmpDir, tts, concatenator)
+	if err != nil {
+		t.Fatalf("erro ao criar AudioWordManager: %v", err)
+	}
+
+	// 1. EnsureNameAudioWithKey com pontuação e acentos
+	key, isNew, err := mgr.EnsureNameAudioWithKey(ctx, "; Márcio? ;", "marcio")
+	if err != nil {
+		t.Fatalf("EnsureNameAudioWithKey falhou: %v", err)
+	}
+	if key != "marcio" || !isNew {
+		t.Errorf("esperava key='marcio' e isNew=true, obteve key='%s', isNew=%v", key, isNew)
+	}
+	if len(synthesized) != 1 || synthesized[0] != "; Márcio? ;" {
+		t.Errorf("esperava síntese com '; Márcio? ;', obteve %v", synthesized)
+	}
+
+	// 2. HasNameAudio deve retornar true
+	if !mgr.HasNameAudio("marcio") {
+		t.Errorf("HasNameAudio('marcio') deveria ser true")
+	}
+
+	// 3. BatchProcessNames com 'marcio' (já existente) e 'ana' (nova)
+	batch := map[string]string{
+		"marcio": "; Márcio? ;",
+		"ana":    "Ana Cláudia",
+	}
+	newMap, err := mgr.BatchProcessNames(ctx, batch)
+	if err != nil {
+		t.Fatalf("BatchProcessNames falhou: %v", err)
+	}
+	if len(newMap) != 1 || !newMap["ana"] {
+		t.Errorf("esperava apenas 'ana' no newMap, obteve %v", newMap)
+	}
+	if !mgr.HasNameAudio("ana") {
+		t.Errorf("HasNameAudio('ana') deveria ser true após batch")
+	}
+}

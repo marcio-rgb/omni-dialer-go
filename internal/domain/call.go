@@ -86,10 +86,12 @@ type ManualCallRequest struct {
 }
 
 type LeadQueueItem struct {
-	Phone  string `json:"phone"`
-	CPF    string `json:"cpf,omitempty"`
-	Name   string `json:"name,omitempty"`
-	LeadID int64  `json:"lead_id,omitempty"`
+	Phone     string `json:"phone"`
+	CPF       string `json:"cpf,omitempty"`
+	Name      string `json:"name,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	WorkWord  string `json:"work_word,omitempty"`
+	LeadID    int64  `json:"lead_id,omitempty"`
 }
 
 type ManualCallResponse struct {

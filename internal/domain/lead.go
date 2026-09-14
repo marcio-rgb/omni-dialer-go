@@ -18,6 +18,8 @@ type Lead struct {
 	CPF           string     `json:"cpf"`
 	Phone         string     `json:"phone"`
 	Name          string     `json:"name,omitempty"`
+	FirstName     string     `json:"first_name,omitempty"`
+	WorkWord      string     `json:"work_word,omitempty"`
 	Status        LeadStatus `json:"status"`
 	AttemptsCount int        `json:"attempts_count"`
 	LastDialedAt  *time.Time `json:"last_dialed_at,omitempty"`
@@ -44,10 +46,12 @@ type RefillResponse struct {
 
 // BatchLeadItem representa um lead individual na carga via JSON.
 type BatchLeadItem struct {
-	CPF      string `json:"cpf"`
-	Phone    string `json:"phone"`
-	Name     string `json:"name,omitempty"`
-	AudioKey string `json:"audio_key,omitempty"`
+	CPF       string `json:"cpf"`
+	Phone     string `json:"phone"`
+	Name      string `json:"name,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	WorkWord  string `json:"work_word,omitempty"`
+	AudioKey  string `json:"audio_key,omitempty"`
 }
 
 // BatchLeadRequest contrato para carga de lote de leads em campanha preditiva.

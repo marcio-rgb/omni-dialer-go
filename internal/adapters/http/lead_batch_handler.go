@@ -72,49 +72,66 @@ func (h *LeadBatchHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var dbLeads []*domain.Lead
 	var queuePayloads []string
-	newSynthesized := 0
-	cachedAudios := 0
+	uniqueNames := make(map[string]string)
 
 	for _, item := range req.Leads {
 		phone := strings.TrimSpace(item.Phone)
 		cpf := strings.TrimSpace(item.CPF)
 		name := strings.TrimSpace(item.Name)
+		firstNameRaw := strings.TrimSpace(item.FirstName)
+		workWordRaw := strings.TrimSpace(item.WorkWord)
+		normWorkWord := domain.Slugify(workWordRaw)
 
 		if len(phone) < 8 {
 			continue
 		}
 
-		// 1. Pré-síntese de áudio para o nome (se fornecido)
-		if name != "" && h.audioWordMgr != nil {
-			audioKey, isNew, err := h.audioWordMgr.EnsureNameAudio(ctx, name)
-			if err != nil {
-				// Loga aviso mas não interrompe a importação do lead
-				audioKey = domain.Slugify(name)
-			}
-			item.AudioKey = audioKey
-			if isNew {
-				newSynthesized++
-			} else {
-				cachedAudios++
+		// Se o nome completo estiver vazio mas first_name foi passado
+		if name == "" && firstNameRaw != "" {
+			name = firstNameRaw
+		}
+
+		// Determina o texto de pronúncia para síntese
+		pronunciationText := firstNameRaw
+		if pronunciationText == "" && name != "" {
+			parts := strings.Fields(name)
+			if len(parts) > 0 {
+				pronunciationText = parts[0]
 			}
 		}
 
-		// 2. Monta struct para PostgreSQL
+		// Normaliza estritamente o primeiro nome para slug O(1) no banco e dialplan
+		normFirstName := domain.Slugify(pronunciationText)
+		if normFirstName != "" && pronunciationText != "" {
+			if h.audioWordMgr == nil || !h.audioWordMgr.HasNameAudio(normFirstName) {
+				if _, exists := uniqueNames[normFirstName]; !exists {
+					uniqueNames[normFirstName] = pronunciationText
+				}
+			}
+		}
+
+		item.AudioKey = normFirstName
+
+		// 1. Monta struct para PostgreSQL: Name (com acentos), FirstName (slug) e WorkWord
 		dbLeads = append(dbLeads, &domain.Lead{
 			CampaignID:    req.CampaignID,
 			TenantID:      req.TenantID,
 			CPF:           cpf,
 			Phone:         phone,
 			Name:          name,
+			FirstName:     normFirstName,
+			WorkWord:      normWorkWord,
 			Status:        domain.LeadStatusNew,
 			AttemptsCount: 0,
 		})
 
-		// 3. Monta payload para o Redis do discador preditivo
+		// 2. Monta payload para o Redis do discador preditivo
 		qItem := domain.LeadQueueItem{
-			Phone: phone,
-			CPF:   cpf,
-			Name:  name,
+			Phone:     phone,
+			CPF:       cpf,
+			Name:      name,
+			FirstName: normFirstName,
+			WorkWord:  normWorkWord,
 		}
 		b, _ := json.Marshal(qItem)
 		queuePayloads = append(queuePayloads, string(b))
@@ -125,7 +142,36 @@ func (h *LeadBatchHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Persiste no PostgreSQL em batch
+	// 3. Processamento O(1) de áudios em lote: sintetiza apenas os nomes únicos ausentes
+	newlySynthesized := make(map[string]bool)
+	if h.audioWordMgr != nil && len(uniqueNames) > 0 {
+		newMap, err := h.audioWordMgr.BatchProcessNames(ctx, uniqueNames)
+		if err == nil {
+			newlySynthesized = newMap
+		}
+	}
+
+	newSynthesizedCount := len(newlySynthesized)
+	cachedAudiosCount := 0
+	seenNew := make(map[string]bool)
+
+	for _, item := range dbLeads {
+		norm := item.FirstName
+		if norm == "" {
+			continue
+		}
+		if newlySynthesized[norm] {
+			if !seenNew[norm] {
+				seenNew[norm] = true
+			} else {
+				cachedAudiosCount++
+			}
+		} else {
+			cachedAudiosCount++
+		}
+	}
+
+	// 4. Persiste no PostgreSQL em batch com chunking seguro
 	if h.leadRepo != nil {
 		if _, err := h.leadRepo.BatchInsert(ctx, dbLeads); err != nil {
 			domain.NewErrInternal(fmt.Sprintf("Falha ao persistir leads no banco de dados: %s", err.Error())).WriteJSON(w)
@@ -142,8 +188,8 @@ func (h *LeadBatchHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 		CampaignID:           req.CampaignID,
 		TotalReceived:        len(req.Leads),
 		LeadsQueued:          len(dbLeads),
-		NewAudiosSynthesized: newSynthesized,
-		CachedAudiosCount:    cachedAudios,
+		NewAudiosSynthesized: newSynthesizedCount,
+		CachedAudiosCount:    cachedAudiosCount,
 		ElapsedMs:            time.Since(start).Milliseconds(),
 	}
 

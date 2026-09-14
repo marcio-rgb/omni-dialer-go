@@ -73,9 +73,9 @@ func TestLeadBatchHandler_IngestBatch(t *testing.T) {
 		"campaign_id": "camp101",
 		"tenant_id": "tenant1",
 		"leads": [
-			{ "cpf": "11122233344", "phone": "11988887777", "name": "Márcio" },
+			{ "cpf": "11122233344", "phone": "11988887777", "name": "MARCIO NASCIMENTO", "first_name": "; Márcio? ;" },
 			{ "cpf": "55566677788", "phone": "11977776666", "name": "João da Silva" },
-			{ "cpf": "99900011122", "phone": "11966665555", "name": "Márcio" }
+			{ "cpf": "99900011122", "phone": "11966665555", "name": "MARCIO SOUZA", "first_name": "; Márcio? ;" }
 		]
 	}`)
 
@@ -102,7 +102,7 @@ func TestLeadBatchHandler_IngestBatch(t *testing.T) {
 	if resp.Data.LeadsQueued != 3 {
 		t.Errorf("esperava LeadsQueued == 3, obteve %d", resp.Data.LeadsQueued)
 	}
-	// "Márcio" sintetizado 1 vez, "João da Silva" 1 vez, 2º "Márcio" reutiliza cache
+	// "; Márcio? ;" sintetizado 1 vez, "João da Silva" 1 vez, 2º "Márcio" reutiliza cache
 	if resp.Data.NewAudiosSynthesized != 2 {
 		t.Errorf("esperava NewAudiosSynthesized == 2, obteve %d", resp.Data.NewAudiosSynthesized)
 	}
@@ -110,18 +110,38 @@ func TestLeadBatchHandler_IngestBatch(t *testing.T) {
 		t.Errorf("esperava CachedAudiosCount == 1, obteve %d", resp.Data.CachedAudiosCount)
 	}
 
-	// Verifica se os textos originais com acentos foram preservados na chamada TTS
+	// Verifica se os textos originais com acentos/pontuação foram enviados para síntese TTS
 	if len(tts.synthesized) != 2 {
 		t.Fatalf("esperava 2 sinteses, obteve %d (%v)", len(tts.synthesized), tts.synthesized)
 	}
-	if tts.synthesized[0] != "Márcio" || tts.synthesized[1] != "João da Silva" {
-		t.Errorf("textos com acento nao preservados: %v", tts.synthesized)
+	hasMarcio := false
+	hasJoao := false
+	for _, s := range tts.synthesized {
+		if s == "; Márcio? ;" {
+			hasMarcio = true
+		}
+		if s == "João" {
+			hasJoao = true
+		}
+	}
+	if !hasMarcio || !hasJoao {
+		t.Errorf("textos para síntese não preservaram acentuação/pontuação: %v", tts.synthesized)
 	}
 
-	// Verifica se os leads foram persistidos no repositório
+	// Verifica se os leads foram persistidos no repositório com Name original e FirstName normalizado
 	if len(repo.inserted) != 3 {
-		t.Errorf("esperava 3 leads persistidos no banco, obteve %d", len(repo.inserted))
+		t.Fatalf("esperava 3 leads persistidos no banco, obteve %d", len(repo.inserted))
 	}
+	if repo.inserted[0].Name != "MARCIO NASCIMENTO" || repo.inserted[0].FirstName != "marcio" {
+		t.Errorf("lead 0 incorreto: Name=%s, FirstName=%s", repo.inserted[0].Name, repo.inserted[0].FirstName)
+	}
+	if repo.inserted[1].Name != "João da Silva" || repo.inserted[1].FirstName != "joao" {
+		t.Errorf("lead 1 incorreto: Name=%s, FirstName=%s", repo.inserted[1].Name, repo.inserted[1].FirstName)
+	}
+	if repo.inserted[2].Name != "MARCIO SOUZA" || repo.inserted[2].FirstName != "marcio" {
+		t.Errorf("lead 2 incorreto: Name=%s, FirstName=%s", repo.inserted[2].Name, repo.inserted[2].FirstName)
+	}
+
 	if len(cache.pushed["camp101"]) != 3 {
 		t.Errorf("esperava 3 leads no redis, obteve %d", len(cache.pushed["camp101"]))
 	}

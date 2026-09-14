@@ -77,6 +77,7 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 	var phones []string
 	var totalRows, validRows, invalidRows int64
 	first30Failed := 0
+	uniqueNames := make(map[string]string)
 
 	for {
 		record, err := reader.Read()
@@ -127,11 +128,32 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 		}
 
 		name := ""
+		firstNameRaw := ""
 		if len(record) >= 5 {
 			name = strings.TrimSpace(record[4])
 		}
-		if mp.audioWordMgr != nil && name != "" {
-			_, _, _ = mp.audioWordMgr.EnsureNameAudio(ctx, name)
+		if len(record) == 6 {
+			firstNameRaw = strings.TrimSpace(record[5])
+		} else if len(record) > 6 {
+			firstNameRaw = strings.TrimSpace(strings.Join(record[5:], ","))
+		}
+		firstNameRaw = strings.ReplaceAll(firstNameRaw, "\\,", ",")
+
+		pronunciationText := firstNameRaw
+		if pronunciationText == "" && name != "" {
+			parts := strings.Fields(name)
+			if len(parts) > 0 {
+				pronunciationText = parts[0]
+			}
+		}
+
+		normFirstName := domain.Slugify(pronunciationText)
+		if normFirstName != "" && pronunciationText != "" {
+			if mp.audioWordMgr == nil || !mp.audioWordMgr.HasNameAudio(normFirstName) {
+				if _, exists := uniqueNames[normFirstName]; !exists {
+					uniqueNames[normFirstName] = pronunciationText
+				}
+			}
 		}
 
 		validRows++
@@ -141,14 +163,18 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 			CPF:           cpf,
 			Phone:         phone,
 			Name:          name,
+			FirstName:     normFirstName,
+			WorkWord:      "",
 			Status:        domain.LeadStatusNew,
 			AttemptsCount: 0,
 		})
-		if name != "" {
+		if name != "" || normFirstName != "" {
 			item := domain.LeadQueueItem{
-				Phone: phone,
-				CPF:   cpf,
-				Name:  name,
+				Phone:     phone,
+				CPF:       cpf,
+				Name:      name,
+				FirstName: normFirstName,
+				WorkWord:  "",
 			}
 			b, _ := json.Marshal(item)
 			phones = append(phones, string(b))
@@ -159,6 +185,11 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 
 	if validRows == 0 {
 		return nil, domain.NewErrBadRequest("EMPTY_VALID_LEADS", "Nenhum lead válido foi extraído do arquivo")
+	}
+
+	// Síntese em lote de nomes únicos ausentes O(1)
+	if mp.audioWordMgr != nil && len(uniqueNames) > 0 {
+		_, _ = mp.audioWordMgr.BatchProcessNames(ctx, uniqueNames)
 	}
 
 	// Persiste em batch no Postgres

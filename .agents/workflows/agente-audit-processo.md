@@ -112,14 +112,18 @@ sequenceDiagram
 - **Gatilho de Início:** Demanda recebida com operadores ociosos (`available_agents > 0`) e fila de leads abastecida.
 - **Cálculo de Overdialing:** $\text{rawChannels} = (\text{numAgents} / \text{contactProbability}) \times (1.0 + (\text{ringTime} / \text{talkTime})) \times \text{aggressiveness}$.
 - **CallerID:** [`randomizeCallerID`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L190) preserva DDD e varia os 4 dígitos finais.
+- **Injeção de Identidade e Áudio:**
+  - `LEAD_NAME`: Nome original completo com acentos (`leads.name`, ex.: `"MARCIO NASCIMENTO"`), injetado no Asterisk e repassado aos headers SIP do LiveKit (`X-Lead-Name`), CRM e tela do operador.
+  - `AUDIO_NAME`: Primeiro nome normalizado (`leads.first_name`, ex.: `"marcio"`), armazenado como slug no banco e indexado em memória para playback local O(1).
+  - `WORK_WORD`: Convênio ou órgão normalizado (`leads.work_word`, ex.: `"governo_sp"`), pré-sintetizado ou renderizado em cache O(1) para composição imediata de áudio na triagem ativa.
 
 ### 2.3. Arbitragem de Capacidade ([`ChannelManager`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go))
 - [`CanAcquireSlot`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L62): Valida Teto Global do PBX, proteção de `humanReserveQuota` e limite granular do tronco.
 - [`AcquireSlot`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L94): Incrementa atomicamente contadores e registra canal ativo.
 - [`ReleaseSlot`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L156) & [`ReleaseByAsterisk`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go#L139): Desaloca canal de forma atômica no Hangup.
 
-### 2.4. Triagem AMD e Atendimento
-- **PBX:** `[triagem-amd]` em [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf#L46): `AMD(1500,1200,500,2000,100,50,3,256)` + Vosk STT EAGI.
+### 2.4. Triagem Ativa Full-Duplex e Atendimento
+- **PBX:** `[triagem-amd]` em [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf): Triagem Ativa Full-Duplex via [`EAGI`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) com reprodução imediata de áudio estruturado concatenado (`saudacao` + `work_words/${WORK_WORD}` + `falo_com` + `names/${AUDIO_NAME}`) e transcrição paralela no `FD 3` via Vosk STT (zero *dead air*, eliminação do AMD passivo).
 - **Humano:** [`PredictiveEngine.HandlePredictiveHuman`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L200). Com operador: define `AGENT_ROOM` e [`ami.Redirect`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L273) para `cos-all-custom` exten `9999`. Sem operador (abandono < 2s): `SetInflatedSuccessRate(30s)` e `ami.Hangup(Cause 16)`.
 - **Gravação de CDR:** No encerramento da chamada.
 

@@ -193,10 +193,12 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 				var leadBatch []string
 				for _, l := range dbLeads {
 					item := domain.LeadQueueItem{
-						Phone:  l.Phone,
-						CPF:    l.CPF,
-						Name:   l.Name,
-						LeadID: l.ID,
+						Phone:     l.Phone,
+						CPF:       l.CPF,
+						Name:      l.Name,
+						FirstName: l.FirstName,
+						WorkWord:  l.WorkWord,
+						LeadID:    l.ID,
 					}
 					b, _ := json.Marshal(item)
 					leadBatch = append(leadBatch, string(b))
@@ -253,6 +255,12 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			leadIDStr = phone
 		}
 
+		audioName := leadItem.FirstName
+		if audioName == "" {
+			audioName = domain.Slugify(leadItem.Name)
+		}
+		workWord := leadItem.WorkWord
+
 		vars := map[string]string{
 			"CALL_ID":       callID,
 			"__CALL_ID":     callID,
@@ -272,8 +280,10 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			"__LEAD_CPF":    leadItem.CPF,
 			"LEAD_NAME":     leadItem.Name,
 			"__LEAD_NAME":   leadItem.Name,
-			"AUDIO_NAME":    domain.Slugify(leadItem.Name),
-			"__AUDIO_NAME":  domain.Slugify(leadItem.Name),
+			"AUDIO_NAME":    audioName,
+			"__AUDIO_NAME":  audioName,
+			"WORK_WORD":     workWord,
+			"__WORK_WORD":   workWord,
 		}
 		if selectedTrunk.UserAgent != nil && *selectedTrunk.UserAgent != "" {
 			vars["TRUNK_USER_AGENT"] = *selectedTrunk.UserAgent

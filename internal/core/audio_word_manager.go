@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"dialer-go/internal/domain"
@@ -20,6 +21,7 @@ type AudioWordManager struct {
 	baseDir      string
 	tts          ports.TTSPort
 	concatenator *AudioConcatenator
+	knownNames   sync.Map
 }
 
 // NewAudioWordManager instancia o gerenciador de cache de áudios
@@ -36,11 +38,27 @@ func NewAudioWordManager(baseDir string, tts ports.TTSPort, concatenator *AudioC
 			return nil, fmt.Errorf("falha ao preparar diretorio %s: %w", p, err)
 		}
 	}
-	return &AudioWordManager{
+	mgr := &AudioWordManager{
 		baseDir:      baseDir,
 		tts:          tts,
 		concatenator: concatenator,
-	}, nil
+	}
+	mgr.loadExistingNames()
+	return mgr, nil
+}
+
+func (m *AudioWordManager) loadExistingNames() {
+	namesDir := filepath.Join(m.baseDir, "names")
+	entries, err := os.ReadDir(namesDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".wav") {
+			slug := strings.TrimSuffix(entry.Name(), ".wav")
+			m.knownNames.Store(slug, true)
+		}
+	}
 }
 
 // SanitizeSlug normaliza chaves de arquivos para formato seguro em disco (minúsculas e underscores)
@@ -196,6 +214,22 @@ func (m *AudioWordManager) GeneratePreview(ctx context.Context, req domain.Audio
 	return m.concatenator.ConcatenateWAVFilesWithPauses(filesToConcat, req.GetPausesSlice())
 }
 
+// HasNameAudio verifica em memória O(1) se o áudio do nome já existe no cache
+func (m *AudioWordManager) HasNameAudio(slug string) bool {
+	if slug == "" {
+		return false
+	}
+	if _, ok := m.knownNames.Load(slug); ok {
+		return true
+	}
+	targetFile := filepath.Join(m.baseDir, "names", slug+".wav")
+	if fileExists(targetFile) {
+		m.knownNames.Store(slug, true)
+		return true
+	}
+	return false
+}
+
 // EnsureNameAudio garante a existência do áudio do nome sintetizado com texto original e salvo como slug seguro.
 //
 // @pattern Service (Method)
@@ -218,17 +252,61 @@ func (m *AudioWordManager) EnsureNameAudio(ctx context.Context, rawName string) 
 		return "", false, nil
 	}
 
+	return m.EnsureNameAudioWithKey(ctx, trimmed, audioKey)
+}
+
+// EnsureNameAudioWithKey garante existência do áudio usando chave normalizada e texto de pronúncia com acentos.
+func (m *AudioWordManager) EnsureNameAudioWithKey(ctx context.Context, rawPronunciation, audioKey string) (string, bool, error) {
+	if audioKey == "" {
+		return "", false, nil
+	}
+
+	if m.HasNameAudio(audioKey) {
+		return audioKey, false, nil
+	}
+
 	targetFile := filepath.Join(m.baseDir, "names", audioKey+".wav")
 	if fileExists(targetFile) {
+		m.knownNames.Store(audioKey, true)
 		return audioKey, false, nil
 	}
 
 	// Sintetiza USANDO O TEXTO ORIGINAL COM ACENTUAÇÃO E PONTUAÇÃO
-	if err := m.tts.Synthesize(ctx, trimmed, targetFile); err != nil {
-		return audioKey, false, fmt.Errorf("falha ao sintetizar audio para nome '%s': %w", trimmed, err)
+	if err := m.tts.Synthesize(ctx, rawPronunciation, targetFile); err != nil {
+		return audioKey, false, fmt.Errorf("falha ao sintetizar audio para nome '%s' (%s): %w", rawPronunciation, audioKey, err)
 	}
 
+	m.knownNames.Store(audioKey, true)
 	return audioKey, true, nil
+}
+
+// BatchProcessNames processa em lote um mapa de nomes únicos [audioKey]rawPronunciationText evitando checagens repetidas
+func (m *AudioWordManager) BatchProcessNames(ctx context.Context, uniqueNames map[string]string) (map[string]bool, error) {
+	newlySynthesized := make(map[string]bool)
+
+	for audioKey, rawText := range uniqueNames {
+		if audioKey == "" {
+			continue
+		}
+		if m.HasNameAudio(audioKey) {
+			continue
+		}
+
+		targetFile := filepath.Join(m.baseDir, "names", audioKey+".wav")
+		if fileExists(targetFile) {
+			m.knownNames.Store(audioKey, true)
+			continue
+		}
+
+		if err := m.tts.Synthesize(ctx, rawText, targetFile); err != nil {
+			return newlySynthesized, fmt.Errorf("falha ao sintetizar audio para nome '%s' (%s): %w", rawText, audioKey, err)
+		}
+
+		m.knownNames.Store(audioKey, true)
+		newlySynthesized[audioKey] = true
+	}
+
+	return newlySynthesized, nil
 }
 
 // EnsureWorkWordAudio garante a existência do áudio do convênio/órgão sintetizado com texto original e salvo como slug seguro.

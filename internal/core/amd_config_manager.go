@@ -187,9 +187,13 @@ silence_threshold = %d
 		m.config.SilenceThreshold,
 	)
 
-	// Grava localmente
-	_ = os.WriteFile("./amd.conf", []byte(iniContent), 0644)
-	_ = os.WriteFile(filepath.Join(m.storagePath, "amd.conf"), []byte(iniContent), 0644)
+	// Grava localmente se existir na raiz do projeto
+	if _, err := os.Stat("./amd.conf"); err == nil {
+		_ = os.WriteFile("./amd.conf", []byte(iniContent), 0644)
+	}
+	if m.storagePath != "" {
+		_ = os.WriteFile(filepath.Join(m.storagePath, "amd.conf"), []byte(iniContent), 0644)
+	}
 
 	// Se o caminho do Asterisk estiver acessivel (volume montado), atualiza
 	if _, err := os.Stat(m.asteriskPath); err == nil {

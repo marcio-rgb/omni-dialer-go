@@ -17,7 +17,7 @@ O **Agente Especialista Asterisk** é a autoridade técnica em infraestrutura de
 
 ---
 
-## 2. Fluxo Telefônico & Pipeline de AMD Híbrido
+## 2. Fluxo Telefônico & Triagem Ativa Full-Duplex (Áudio Estruturado + Vosk STT)
 
 ```mermaid
 sequenceDiagram
@@ -27,35 +27,32 @@ sequenceDiagram
     participant PreDial as Pre-Dial Handler
     participant Telco as Operadora (Tronco SIP)
     participant Dialplan as extensions.conf (triagem-amd)
-    participant AMDNat as AMD Nativo (app_amd)
-    participant EAGI as vosk-eagi (FD 3)
+    participant EAGI as vosk-eagi (Full-Duplex)
     participant Vosk as Vosk Server (Kaldi 8kHz)
     participant Agent as Operador / Sala LiveKit
 
-    AMI->>Core: Originate(Channel: PJSIP/tronco/numero, Context: from-dialer-amd)
+    AMI->>Core: Originate(Channel: PJSIP/tronco/numero, Context: from-dialer-amd, Vars: AUDIO_NAME, WORK_WORD, LEAD_NAME)
     Core->>PreDial: Executa pre-dial-vivo (Set CallerID / PAI / User-Agent)
     Core->>Telco: SIP INVITE (100 Trying -> 180 Ringing)
     Telco-->>Core: 200 OK (Cliente Atendeu)
     Core->>Dialplan: Entra no context [triagem-amd]
-    Dialplan->>Dialplan: Answer() + Inicia MixMonitor(.wav)
-    Dialplan->>AMDNat: Executa AMD(1500,1200,500,2000,100,50,3,256)
-    alt AMD Detectou HUMAN ou NOTSURE (Fala Curta Natural)
-        AMDNat-->>Dialplan: AMDSTATUS=HUMAN / NOTSURE
+    Dialplan->>Dialplan: Answer() + Inicia MixMonitor(.wav,b)
+    Dialplan->>EAGI: Dispara EAGI(vosk-eagi, ${AUDIO_NAME}, ${WORK_WORD})
+    par Reprodução de Áudio Ativo (TX)
+        EAGI->>Core: AGI EXEC Background(saudacao & work_word & falo_com & nome)
+    and Escuta Concorrente em Tempo Real (RX no FD 3)
+        Core->>EAGI: Stream de Áudio do Cliente (PCM 16-bit 8kHz via FD 3)
+        EAGI->>Vosk: Chunks de 100ms via WebSocket RFC 6455
+        Vosk-->>EAGI: Transcrição Parcial / Completa
+    end
+    alt Caixa Postal / Mensagem de Operadora Detectada
+        EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: VOICEMAIL_...)
+        Dialplan->>Core: Hangup() -> Descarte Silencioso Imediato
+    else Cliente Falou / Confirmou ("Alô", "Sim", "Sou eu") ou Fallback Seguro
+        EAGI-->>Dialplan: VOSK_AMD_STATUS=HUMAN (Causa: HUMAN_...)
         Dialplan->>AMI: UserEvent(PredictiveHuman, Channel, Phone, LeadId)
-        AMI->>Core: Redirect(Channel, cos-all, 9999) -> Entrega Imediata
-    else AMD Suspeita MACHINE (Mensagem Longa de Operadora)
-        AMDNat-->>Dialplan: AMDSTATUS=MACHINE
-        Dialplan->>EAGI: Dispara EAGI(vosk-eagi) lendo FD 3
-        EAGI->>Vosk: Streaming PCM 8kHz via WebSocket RFC 6455
-        Vosk-->>EAGI: Transcrição parcial / completa
-        alt Caixa Postal / Mensagem Gravada Detectada
-            EAGI-->>Dialplan: VOSK_AMD_STATUS=MACHINE (Causa: VOICEMAIL_...)
-            Dialplan->>Core: Hangup(Cause 16) -> Descarte Silencioso
-        else Fala Humana / Falso Positivo AMD
-            EAGI-->>Dialplan: VOSK_AMD_STATUS=HUMAN (Causa: HUMAN_ALO)
-            Dialplan->>AMI: UserEvent(PredictiveHuman, Channel, Phone, LeadId)
-            AMI->>Core: Redirect(Channel, cos-all, 9999)
-        end
+        AMI->>Core: Redirect(Channel, cos-all, 9999) -> Entrega Imediata ao LiveKit
+        Core->>Agent: Conecta áudio com Headers SIP (X-Lead-Name com acentos)
     end
 ```
 
@@ -69,41 +66,32 @@ sequenceDiagram
 | `[pre-dial-vivo]` | Normalização de cabeçalhos SIP | Injeta `TRUNK_ID` no `CALLERID(num)`, `P-Asserted-Identity` e `User-Agent` antes do envio do INVITE. |
 | `[outbound-vivo]` | Rota externa direta | Utiliza prefixo `b(pre-dial-vivo^s^1)` no comando `Dial`. |
 | `[from-dialer-amd]` | Ponto de entrada preditivo | Salto sem delay (`Goto(triagem-amd,s,1)`) para o motor de análise. |
-| `[triagem-amd]` | Pipeline de AMD Híbrido | Atendimento imediato, `MixMonitor` com path anualizado (`%Y/%m/%d`), AMD nativo + EAGI Vosk. |
-| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-CPF` e `X-Campaign-Id`. |
+| `[triagem-amd]` | Triagem Ativa Full-Duplex | Atendimento imediato (`Answer`), `MixMonitor` em background (`b`), reprodução de áudio estruturado concatenado (`saudacao` + `work_word` + `falo_com` + `nome`) e escuta concorrente via EAGI Vosk (`FD 3`). Sem silêncio passivo (*dead air*). |
+| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-Name`, `X-Lead-CPF` e `X-Campaign-Id`. **Ressalva:** `${LEAD_NAME}` recebe estritamente o nome original completo com acentos (`leads.name`), enquanto `${AUDIO_NAME}` recebe o slug normalizado para áudios locais `.wav`. |
 | `[from-dialer-manual]` | Entrega de discagem manual | Roteia perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
 | `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Extensão `9999` conecta chamada à sala `AGENT_ROOM` retornando dinamicamente ao IP de origem (`${CHANNEL(pjsip,remote_addr)}`), sem IPs fixos, ou com fallback para o endpoint `livekit-sip`. |
 
 ### 3.2. Regra de Ouro do Atendimento Humano
 > [!IMPORTANT]
 > **Nunca derrubar chamadas humanas por dúvida:**  
-> Se o AMD nativo retornar `NOTSURE` ou houver falha de socket com o servidor Vosk (`VOSK_CONN_FALLBACK`), o dialplan **deve sempre assumir `HUMAN`**, transferindo a ligação imediatamente ao operador humano. A penalidade de falso negativo (operador ouvir mensagem de caixa postal) é infinitamente menor do que a de falso positivo (derrubar um cliente interessado que disse "Alô").
+> Se o Vosk STT não detectar inequívoca caixa postal ou houver falha de socket (`VOSK_CONN_FALLBACK`), o dialplan **deve sempre assumir `HUMAN`**, notificando o discador e transferindo a ligação imediatamente ao operador. A penalidade de falso negativo (operador ouvir mensagem residual de operadora) é infinitamente menor do que a de falso positivo (derrubar um cliente interessado).
 
 ---
 
-## 4. Avaliação e Benchmark de Tecnologias AMD & STT
+## 4. Arquitetura de Triagem Ativa Full-Duplex vs. AMD Passivo
 
-### 4.1. Matriz Comparativa de Motores para Discagem Preditiva
+### 4.1. Por que o AMD Passivo foi Eliminado
+1. **Dead Air (Silêncio Fantasma):** O AMD tradicional (`app_amd.so`) impõe de 1,5s a 2,5s de silêncio absoluto aguardando a fala do cliente, gerando desligamento precoce pelo cliente (*"alô? alô? ... desligou"*).
+2. **Triagem Ativa:** O sistema já inicia saudando o cliente e citando a instituição/convênio (`saudacao.wav` + `work_words/${WORK_WORD}.wav` + `falo_com.wav` + `names/${AUDIO_NAME}.wav`). A taxa de retenção do cliente é drasticamente maior.
+3. **Barge-In Instantâneo:** Se o cliente interromper a fala com *"Alô"*, *"Sim, sou eu"*, ou se uma secretária eletrônica responder *"Deixe seu recado"*, o Vosk STT via `FD 3` detecta a intenção em menos de 100-300ms.
+
+### 4.2. Matriz Comparativa de Motores para Discagem Preditiva
 | Tecnologia / Modelo | Latência Média | Consumo RAM/CPU | Acurácia PT-BR | Veredito para Dialer Preditivo |
 | :--- | :---: | :---: | :---: | :--- |
-| **AMD Nativo Asterisk (`app_amd`)** | **0 ms** (tempo real) | Quase zero | ~70% (apenas energia) | **Essencial como 1ª Barreira.** Filtra 80% dos humanos imediatamente no primeiro "Alô". |
-| **Vosk Small (`vosk-model-small-pt-0.3`)** | **< 150 ms** (stream) | ~150 MB RAM | ~88% (frases-chave) | **Campeão de Produção (Em Uso).** Rápido, roda em CPU básica, precisão perfeita para caixas postais. |
-| **Vosk Grande (`vosk-model-pt-fb-v0.1.1`)** | ~400 - 800 ms | ~2.2 GB RAM | ~96% (vocabulário amplo) | **Não Recomendado para Triagem.** Adiciona latência desnecessária e consome memória excessiva por canal. |
-| **Silero VAD (ONNX)** | < 30 ms | Baixo | Apenas VAD (sem STT) | **Excelente para detecção de Bip/Silêncio**, mas incapaz de distinguir voz humana de mensagem gravada. |
-| **Whisper / Faster-Whisper** | 1200 - 2500 ms | Alto (exige GPU) | 98% | **Inviável para AMD de Discador.** Causa abandono regulatório (> 2s) devido ao tempo de inferência. |
-
-### 4.2. Parâmetros Recomendados de Fine-Tuning do [`amd.conf`](file:///home/marcio/ominichat/dialer-go/amd.conf)
-```ini
-[general]
-initial_silence = 1500          ; Silêncio máximo antes de começar a falar (ms)
-greeting = 1200                 ; Duração máxima de saudação humana ("Alô, bom dia")
-after_greeting_silence = 500    ; Pausa após a saudação humana (ms)
-total_analysis_time = 2000      ; Tempo teto de análise do AMD nativo (ms)
-min_word_length = 100           ; Duração mínima de uma palavra válida (ms)
-between_words_silence = 50      ; Silêncio entre palavras (ms)
-maximum_number_of_words = 3     ; Acima de 3 palavras antes da pausa = suspeita de máquina
-silence_threshold = 256         ; Limiar de sensibilidade de energia acústica
-```
+| **Triagem Ativa Full-Duplex (Vosk + Áudio Estruturado)** | **< 100 ms** (stream) | ~150 MB RAM | ~95% (contextual) | **Padrão Oficial.** Áudio imediato pré-renderizado + STT em paralelo. Zero *dead air*. |
+| **AMD Nativo Asterisk (`app_amd`)** | 1500 - 2500 ms (silêncio) | Quase zero | ~70% (apenas energia) | **Descontinuado / Eliminado.** Silêncio passivo inaceitável para discagem ativa. |
+| **Silero VAD (ONNX)** | < 30 ms | Baixo | Apenas VAD (sem STT) | **Complementar.** Útil para detecção de silêncio de canal, mas insuficiente para semântica. |
+| **Whisper / Faster-Whisper** | 1200 - 2500 ms | Alto (exige GPU) | 98% | **Inviável para Triagem.** Latência incompatível com o teto de 1,5s. |
 
 ---
 
