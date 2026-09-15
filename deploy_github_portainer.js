@@ -68,7 +68,11 @@ function getLocalEnvConfig() {
             const urlMatch = content.match(/PORTAINER_URL(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
             const keyMatch = content.match(/PORTAINER_KEY(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
 
-            if (urlMatch) config.portainerUrl = urlMatch[1].trim().replace(/\/$/, '') + '/api';
+            if (urlMatch) {
+                let u = urlMatch[1].trim().replace(/\/$/, '');
+                if (!u.endsWith('/api')) u += '/api';
+                config.portainerUrl = u;
+            }
             if (keyMatch) config.portainerKey = keyMatch[1].trim();
         }
     }
