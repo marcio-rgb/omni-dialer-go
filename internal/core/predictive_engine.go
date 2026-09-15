@@ -352,23 +352,16 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 
 	// 1. Busca o próximo operador disponível na fila da campanha
 	agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
-	if err != nil || agent == nil {
-		// Sem operador imediatamente disponível: pós-abandono regulatório (< 2s)
+	roomName := fmt.Sprintf("sala_campanha_%s", campaignID)
+
+	if err == nil && agent != nil && agent.AgentID != "" {
+		roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
 		if callID != "" {
-			pe.channels.SetCallDisposition(callID, domain.DispositionAbandoned)
+			pe.channels.AssignAgent(callID, agent.AgentID)
 		}
-		_ = pe.cache.SetInflatedSuccessRate(ctx, 30*time.Second)
-		_ = pe.ami.Hangup(ctx, actionID, channel, 16)
-		return fmt.Errorf("nenhum operador disponivel para campanha %s: chamada abandonada", campaignID)
+	} else {
+		log.Printf("[PREDICTIVE-HUMAN] Nenhum agent_id individual na fila Redis para campanha %s. Utilizando sala fallback '%s'", campaignID, roomName)
 	}
-
-	// 2. Promove a chamada para cota humana e vincula o operador
-	if callID != "" {
-		pe.channels.AssignAgent(callID, agent.AgentID)
-	}
-
-	// 3. Define o nome da sala persistente do operador no LiveKit
-	roomName := fmt.Sprintf("sala_agente_%s", agent.AgentID)
 
 	// 4. Define a variável AGENT_ROOM no canal do Asterisk
 	setVarCmd := fmt.Sprintf("dialplan set chanvar %s AGENT_ROOM %s", channel, roomName)
