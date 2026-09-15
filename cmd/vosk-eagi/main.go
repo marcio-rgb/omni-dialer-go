@@ -8,18 +8,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-)
 
-type VoskMessage struct {
-	Text    string `json:"text"`
-	Partial string `json:"partial"`
-}
+	"dialer-go/internal/domain"
+)
 
 func main() {
 	readAGIEnvironment()
@@ -44,62 +40,96 @@ func main() {
 		workWord = strings.TrimSpace(os.Args[2])
 	}
 
-	wsURL := os.Getenv("VOSK_SERVER_URL")
-	if wsURL == "" {
-		wsURL = "ws://127.0.0.1:2700"
+	routerURL := os.Getenv("VOSK_ROUTER_URL")
+	if routerURL == "" {
+		routerURL = "ws://classificator-router:2800"
 	}
 
-	maxDuration := 3.5 // Janela de 3.5s: 1.1s para áudio "Olá, tudo bem!?" + 2.4s para resposta do cliente
-	if envDur := os.Getenv("VOSK_MAX_DURATION_SEC"); envDur != "" {
-		if d, err := strconv.ParseFloat(envDur, 64); err == nil && d > 0 {
-			maxDuration = d
-		}
-	}
+	// 1. Inicia Goroutine de Reprodução Ativa de Áudio Estruturado via Asterisk AGI
+	var finished atomic.Bool
+	go playStructuredAudio(audioName, workWord, &finished)
 
-	// Carrega personalização dinâmica do AMD salva pelo Dialer-Go se houver
-	LoadDynamicConfig(&maxDuration)
-
-	wsClient, err := connectWebSocket(wsURL, 1500*time.Millisecond)
+	// 2. Conecta ao Classificator-Router de Ultra-Baixa Latência (< 150ms timeout)
+	wsClient, err := connectWebSocket(routerURL, 150*time.Millisecond)
 	if err != nil {
-		agiVerbose(fmt.Sprintf("VOSK-EAGI: Conexao com Vosk falhou: %v. Fallback seguro para HUMAN.", err), 1)
+		// Fallback secundário de contingência para o Vosk legado caso router esteja offline
+		legacyURL := os.Getenv("VOSK_SERVER_URL")
+		if legacyURL == "" {
+			legacyURL = "ws://dialer-vosk:2700"
+		}
+		wsClient, err = connectWebSocket(legacyURL, 150*time.Millisecond)
+	}
+
+	if err != nil {
+		agiVerbose(fmt.Sprintf("VOSK-EAGI: Conexao com Classificator falhou (%s): %v. Fallback seguro para HUMAN.", routerURL, err), 1)
 		agiSetVar("VOSK_AMD_STATUS", "HUMAN")
-		agiSetVar("VOSK_AMD_CAUSE", "VOSK_CONN_FALLBACK")
+		agiSetVar("VOSK_AMD_CAUSE", "ROUTER_FALLBACK_SAFE")
 		agiSetVar("VOSK_AMD_TEXT", "")
+		finished.Store(true)
 		return
 	}
 	defer wsClient.Close()
 
-	_ = wsClient.WriteText(`{"config" : { "sample_rate" : 8000 }}`)
+	// Handshake com o motor de classificação
+	_ = wsClient.WriteText(`{"action":"start","sample_rate":8000,"max_duration_sec":3.5}`)
 
-	// Inicia Goroutine de Reprodução Ativa de Áudio Estruturado via Asterisk AGI
-	var finished atomic.Bool
-	go playStructuredAudio(audioName, workWord, &finished)
-
-	status := "UNKNOWN"
-	cause := "PENDING"
-	finalizedText := ""
+	status := "HUMAN"
+	cause := "FALLBACK_ASSUMED_HUMAN"
 	fullText := ""
-	startTime := time.Now()
-	var firstSpeechTime time.Time
-	var lastSpeechTime time.Time
 
-	chunkBuf := make([]byte, 1600) // 100ms de áudio PCM 16-bit 8kHz
+	// 3. Goroutine leitora de eventos assíncronos do Classificator
+	verdictChan := make(chan domain.WireEventMessage, 1)
+	go func() {
+		for {
+			rawMsg, readErr := wsClient.ReadMessage(0)
+			if readErr != nil {
+				return
+			}
+			if len(rawMsg) == 0 {
+				continue
+			}
+
+			var event domain.WireEventMessage
+			if err := json.Unmarshal(rawMsg, &event); err == nil {
+				if event.Text != "" {
+					fullText = event.Text
+					agiSetVar("VOSK_TRANSCRIPTION", fullText)
+				}
+				if event.Type == domain.WireEventVerdict {
+					select {
+					case verdictChan <- event:
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	// 4. Loop de envio de frames de áudio PCM 16-bit 8000Hz (FD 3)
+	chunkBuf := make([]byte, 1600)
+	startTime := time.Now()
 
 	for {
-		elapsed := time.Since(startTime)
-		// Grace period dinâmico: se o cliente começou a falar nos últimos 800ms,
-		// permite até 1.0s extra além de maxDuration para concluir a transcrição
-		if elapsed >= time.Duration(maxDuration*float64(time.Second)) {
-			isRecentSpeech := !firstSpeechTime.IsZero() && time.Since(lastSpeechTime) < 800*time.Millisecond
-			if !isRecentSpeech || elapsed >= time.Duration((maxDuration+1.0)*float64(time.Second)) {
-				break
+		select {
+		case verdict := <-verdictChan:
+			status = string(verdict.Status)
+			cause = verdict.Cause
+			if verdict.Text != "" {
+				fullText = verdict.Text
 			}
+			finished.Store(true)
+			goto finish
+		default:
+		}
+
+		if time.Since(startTime) > 4*time.Second {
+			break
 		}
 
 		n, readErr := audioFile.Read(chunkBuf)
 		if n > 0 {
 			if writeErr := wsClient.WriteBinary(chunkBuf[:n]); writeErr != nil {
-				agiVerbose(fmt.Sprintf("VOSK-EAGI: Erro ao enviar audio ao Vosk: %v", writeErr), 1)
 				break
 			}
 		}
@@ -113,109 +143,21 @@ func main() {
 			}
 			break
 		}
-
-		rawMsg, err := wsClient.ReadMessage(40 * time.Millisecond)
-		if err == nil && len(rawMsg) > 0 {
-			var vm VoskMessage
-			if jsonErr := json.Unmarshal(rawMsg, &vm); jsonErr == nil {
-				txt := normalizeText(vm.Text)
-				part := normalizeText(vm.Partial)
-
-				if txt != "" {
-					finalizedText = strings.TrimSpace(finalizedText + " " + txt)
-					fullText = finalizedText
-				} else if part != "" {
-					fullText = strings.TrimSpace(finalizedText + " " + part)
-				}
-
-				current := txt
-				if current == "" {
-					current = part
-				}
-
-				if current != "" {
-					if firstSpeechTime.IsZero() {
-						firstSpeechTime = time.Now()
-					}
-					lastSpeechTime = time.Now()
-					agiSetVar("VOSK_TRANSCRIPTION", fullText)
-
-					// 1. CHECAGEM PRIORITÁRIA DE SAUDAÇÃO HUMANA ("Alô", "Quem fala", "Oi", etc.)
-					// Se o cliente falou qualquer saudação humana válida, confirma HUMAN instantaneamente!
-					paddedCurrent := " " + normalizeText(current) + " "
-					paddedFull := " " + normalizeText(fullText) + " "
-					isHuman := false
-					matchedGreet := ""
-					for _, greeting := range quickHumanGreetings {
-						normGreeting := normalizeText(greeting)
-						paddedGreeting := " " + normGreeting + " "
-						if strings.Contains(paddedCurrent, paddedGreeting) || strings.Contains(paddedFull, paddedGreeting) {
-							isHuman = true
-							matchedGreet = normGreeting
-							break
-						}
-					}
-
-					if isHuman {
-						status = "HUMAN"
-						cause = "HUMAN_GREETING_" + strings.ToUpper(strings.ReplaceAll(matchedGreet, " ", "_"))
-						finished.Store(true)
-						break
-					}
-
-					// 2. Checagem de Caixa Postal / Operadora com tolerância restrita
-					currWords := strings.Fields(current)
-					fullWords := strings.Fields(fullText)
-					for _, phrase := range highConfidenceVM {
-						normPhrase := normalizeText(phrase)
-						targetWords := strings.Fields(normPhrase)
-						maxTolerance := 0
-						if len(targetWords) >= 3 {
-							maxTolerance = 1
-						}
-						if fuzzyContainsPhrase(currWords, targetWords, maxTolerance) || fuzzyContainsPhrase(fullWords, targetWords, maxTolerance) {
-							status = "MACHINE"
-							cause = "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
-							break
-						}
-					}
-
-					if status == "MACHINE" {
-						finished.Store(true)
-						break
-					}
-				}
-			}
-		}
 	}
 
+	// Aguarda veredito com grace period rápido se ainda não recebido
+	select {
+	case verdict := <-verdictChan:
+		status = string(verdict.Status)
+		cause = verdict.Cause
+		if verdict.Text != "" {
+			fullText = verdict.Text
+		}
+	case <-time.After(300 * time.Millisecond):
+	}
+
+finish:
 	finished.Store(true)
-
-	if status != "MACHINE" && status != "HUMAN" {
-		_ = wsClient.WriteText(`{"eof" : 1}`)
-		if rawMsg, err := wsClient.ReadMessage(350 * time.Millisecond); err == nil && len(rawMsg) > 0 {
-			var vm VoskMessage
-			if jsonErr := json.Unmarshal(rawMsg, &vm); jsonErr == nil {
-				txt := normalizeText(vm.Text)
-				if txt != "" {
-					finalizedText = strings.TrimSpace(finalizedText + " " + txt)
-					fullText = finalizedText
-					agiSetVar("VOSK_TRANSCRIPTION", fullText)
-				}
-			}
-		}
-
-		metrics := CallMetrics{
-			FullText: fullText,
-		}
-		if !firstSpeechTime.IsZero() {
-			metrics.SpeechDurationSec = lastSpeechTime.Sub(firstSpeechTime).Seconds()
-			metrics.SilenceAfterSec = time.Since(lastSpeechTime).Seconds()
-		}
-
-		status, cause = ClassifyCall(metrics)
-	}
-
 	agiVerbose(fmt.Sprintf("VOSK-EAGI Concluido: STATUS=%s CAUSA=%s TEXTO='%s'", status, cause, fullText), 1)
 	agiSetVar("VOSK_AMD_STATUS", status)
 	agiSetVar("VOSK_AMD_CAUSE", cause)
@@ -227,26 +169,15 @@ func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
 	audioBaseDir := "/var/lib/asterisk/sounds"
 	if envBase := os.Getenv("AUDIO_CACHE_DIR"); envBase != "" {
 		audioBaseDir = envBase
-	} else if _, err := os.Stat("/var/lib/asterisk/sounds"); err != nil {
-		if _, err2 := os.Stat("/opt/ominichat/asterisk/sounds"); err2 == nil {
-			audioBaseDir = "/opt/ominichat/asterisk/sounds"
-		} else if _, err3 := os.Stat("./storage/audio_cache"); err3 == nil {
-			audioBaseDir = "./storage/audio_cache"
-		}
 	}
 
 	targetAudio := ""
 	for _, candidate := range []string{
 		filepath.Join(audioBaseDir, "custom", "alo_tudo_bem"),
 		filepath.Join(audioBaseDir, "custom", "ola_tudo_bem"),
-		filepath.Join(audioBaseDir, "words", "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "words", "alo_tudo_bem"),
-		filepath.Join(audioBaseDir, "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "alo_tudo_bem"),
-		filepath.Join(audioBaseDir, "base", "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "base", "alo_tudo_bem"),
-		filepath.Join(audioBaseDir, "saudacao"),
-		filepath.Join(audioBaseDir, "base", "saudacao"),
 	} {
 		if fileExists(candidate + ".wav") {
 			targetAudio = candidate
@@ -276,7 +207,6 @@ func readAGIEnvironment() {
 			break
 		}
 	}
-	// Drena continuamente respostas subsequentes do Asterisk em background para evitar deadlock de pipe
 	go func() {
 		for scanner.Scan() {
 			// drena
@@ -299,5 +229,3 @@ func agiSetVar(name, value string) {
 func agiVerbose(msg string, level int) {
 	agiSend(fmt.Sprintf("VERBOSE %q %d", msg, level))
 }
-
-

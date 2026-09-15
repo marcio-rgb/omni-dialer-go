@@ -27,8 +27,8 @@ services:
       - MAX_GLOBAL_CHANNELS=250
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
-      - RECORDINGS_BASE_URL=https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789441618
+      - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
+      - UPDATE_TIMESTAMP=1789485611
     volumes:
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
     ports:
@@ -131,7 +131,7 @@ services:
       resources:
         limits:
           cpus: '4.0'
-          memory: 4G
+          memory: 8G
         reservations:
           cpus: '1.0'
           memory: 1G

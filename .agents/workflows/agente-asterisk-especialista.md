@@ -95,19 +95,16 @@ sequenceDiagram
 
 ---
 
-## 5. Arquitetura do Motor EAGI Go ([`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go))
+## 5. Arquitetura do Thin Client EAGI Go ([`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go))
 
-O script EAGI executa como processo filho do Asterisk com comunicação de ultra-baixa latência:
+O script EAGI executa como processo filho do Asterisk com comunicação de ultra-baixa latência (< 120 linhas, agnóstico de regras de negócio):
 1. **Entrada de Áudio (FD 3):** Áudio PCM linear 16-bit 8000Hz mono disponibilizado pelo Asterisk via Descritor de Arquivo 3.
-2. **Bufferização Dinâmica:** Leitura em chunks de 1600 bytes (100 ms de áudio) enviados imediatamente via WebSocket RFC 6455 ao servidor Kaldi-Vosk.
-3. **Streaming Contínuo de Transcrição:** A cada hipótese ou transcrição parcial/final, o EAGI despacha `SET VARIABLE VOSK_TRANSCRIPTION "<texto>"` e crava `VOSK_AMD_TEXT` no canal Asterisk, permitindo que o `TrunkManager` capture o texto em tempo real via AMI `VarSet`.
-4. **Análise Semântica em Três Vereditos:**
-   - **Tabela de Caixas Postais:** `caixa postal`, `deixe seu recado`, `apos o sinal`, `nao pode atender`, `vivo informa`, `claro informa`, `tim informa`, etc. $\rightarrow$ `VOSK_AMD_STATUS=MACHINE`, `VOSK_AMD_CAUSE=VOICEMAIL_<FRASE>`.
-   - **Tabela de Saudações Humanas:** `alo`, `tudo`, `tudo bem`, `tudo e voce`, `ola`, `oi`, `pronto`, `pois nao`, `quem fala`, `opa`, `bom dia`, etc. $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_<SAUDACAO>`.
-   - **Fala Natural:** Fala transcrita que não se enquadre em termos de caixa postal $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_NATURAL_SPEECH`.
-   - **Silêncio Após Saudação (Cliente ouvindo):** Nenhuma fala detectada ou cliente ouvindo calado $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_SILENCE_ASSUMED` (Regra de Ouro: nunca derrubar humano por silêncio após atendimento).
-5. **Fast-Exit (Saída Antecipada):** Assim que a transcrição parcial ou total contém qualquer saudação humana (ou termo explícito de caixa postal), o loop é interrompido imediatamente.
-6. **Descarte com Notificação AMI no Dialplan:** Ao identificar `MACHINE` ou `HUMAN`, o Asterisk despacha `UserEvent(PredictiveMachine / PredictiveHuman, ..., Transcript: ${VOSK_AMD_TEXT})`, assegurando que o texto transcrito alimente de imediato o CDR para auditoria e análises preditivas.
+2. **Conexão Direta com Classificator-Router (:2800):** Conecta via WebSocket em `ws://classificator-router:2800` (Fast-Path $O(1)$) ou fallback seguro em caso de indisponibilidade de rede.
+3. **Bufferização Dinâmica:** Leitura em chunks de 1600 bytes (100 ms de áudio) enviados imediatamente via streaming contínuo.
+4. **Desacoplamento Semântico:** As regras de negócio, VAD, dicionários de caixas postais e saudações humanas residem na stack modularizada **`classificator`** (`cmd/classificator-engine`), permitindo hot-reload de código sem recompilar o binário do Asterisk.
+5. **Recepção de Eventos Wire:** O Thin Client recebe `transcription_partial`, `transcription_final` e o `classification_verdict`, cravando as variáveis de canal `VOSK_TRANSCRIPTION`, `VOSK_AMD_STATUS`, `VOSK_AMD_CAUSE` e `VOSK_AMD_TEXT` no Asterisk.
+6. **Regra de Ouro (Fallback Safe):** Em caso de falha de conexão com o Router, o script assume instantaneamente `HUMAN` (`ROUTER_FALLBACK_SAFE`), garantindo descarte zero de clientes legítimos.
+7. **Descarte com Notificação AMI no Dialplan:** Ao identificar `MACHINE` ou `HUMAN`, o Asterisk despacha `UserEvent(PredictiveMachine / PredictiveHuman, ..., Transcript: ${VOSK_AMD_TEXT})`, assegurando que o texto transcrito alimente de imediato o CDR para auditoria e análises preditivas.
 
 ---
 
@@ -146,5 +143,6 @@ Para evitar quebra de passagem de áudio bidirecional e timeouts de mídia (`med
 
 Sempre que atuar no ecossistema Asterisk / PBX:
 1. **Testes de Sintaxe:** Antes de aplicar mudanças no dialplan, validar com `asterisk -rx "dialplan reload"` e `asterisk -rx "dialplan show <context>"`.
-2. **Controle de Gravações:** O comando `MixMonitor` deve sempre utilizar a flag `b` para rodar em thread de background e gravar arquivos com caminhos particionados por ano/mês/dia.
+2. **Controle de Gravações (Dual-Channel Stereo Obrigatório):** O comando `MixMonitor` deve obrigatoriamente gravar em WAV PCM 16-bit 8000 Hz segregando `r(${REC_FILENAME}-rx.wav)` (Cliente) e `t(${REC_FILENAME}-tx.wav)` (Atendente/Bot), com acionamento do utilitário pós-gravação `/var/lib/asterisk/agi-bin/merge-stereo` para gerar o arquivo final `${REC_FILENAME}.wav` em estéreo unificado e purgar os temporários. Proibido encoding MP3 em tempo real no PBX (conversão para MP3 ocorre estritamente de forma assíncrona em background).
 3. **Atualização de Assinaturas:** Notificar qualquer nova variável de canal ou evento AMI para o [Agente Especialista Go](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-go-especialista.md) e registrar no [Agente Auditor de Processo](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-audit-processo.md).
+

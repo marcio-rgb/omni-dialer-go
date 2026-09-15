@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  classificator-router:
+    image: ghcr.io/marcio-rgb/omni-classificator-router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.classificator
+      target: router
+    ports:
+      - "2800:2800" # WebSocket para clientes Asterisk EAGI
+      - "2809:2809" # REST API de status e telemetria
+    networks:
+      - minha_rede
+    environment:
+      - LISTEN_ADDR=:2800
+      - ADMIN_ADDR=:2809
+      - PORT_1=classificator-node1:2801
+      - PORT_2=classificator-node2:2802
+      - PORT_3=classificator-node3:2803
+      - DIAL_TIMEOUT_MS=60
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  classificator-node1:
+    image: ghcr.io/marcio-rgb/omni-classificator-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.classificator
+      target: engine
+    networks:
+      - minha_rede
+    ports:
+      - "2801:2801"
+    environment:
+      - PORT=2801
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - VOSK_MAX_DURATION_SEC=3.5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  classificator-node2:
+    image: ghcr.io/marcio-rgb/omni-classificator-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.classificator
+      target: engine
+    networks:
+      - minha_rede
+    ports:
+      - "2802:2802"
+    environment:
+      - PORT=2802
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - VOSK_MAX_DURATION_SEC=3.5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  classificator-node3:
+    image: ghcr.io/marcio-rgb/omni-classificator-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.classificator
+      target: engine
+    networks:
+      - minha_rede
+    ports:
+      - "2803:2803"
+    environment:
+      - PORT=2803
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - VOSK_MAX_DURATION_SEC=3.5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+networks:
+  minha_rede:
+    external: true
+    name: minha_rede

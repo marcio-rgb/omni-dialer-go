@@ -31,8 +31,8 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
    - Hot-reload dinâmico de troncos SIP sem perda de chamadas ativas.
 3. **Telefonia de Baixa Latência:**
    - Conexão persistente via socket TCP nativo AMI (:5038) com o Asterisk PBX 20 LTS.
-4. **Triagem Ultrarrápida de Atendimento Humano vs. Máquina (AMD Híbrido):**
-   - Triagem em duas etapas: Asterisk `app_amd` nativo seguido de análise semântica em tempo real com Vosk STT via EAGI Go (`cmd/vosk-eagi`) na porta :2700, entregando o áudio ao operador em menos de 1,5 segundo.
+4. **Triagem Ultrarrápida de Atendimento Humano vs. Máquina (Subsistema Classificator):**
+   - Triagem ativa full-duplex de voz via script EAGI Thin Client no Asterisk comunicando-se com o `classificator-router` (:2800) em anel circular de 3 portas (:2801, :2802, :2803), entregando a chamada ao operador em menos de 1,5 segundo com suporte a hot-reload sem downtime no meio da operação.
 5. **Comutação e Destino de Áudio:**
    - Comutação via protocolo SIP para operadores humanos e salas de agentes virtuais de voz (LiveKit).
 6. **Soberania do Histórico, Transcrições e Gravações:**
@@ -130,6 +130,8 @@ flowchart TD
 
     subgraph Downstream["Downstream (Infraestrutura & Serviços)"]
         AsteriskAMI["Asterisk PBX AMI (TCP :5038)"]
+        ClassificatorRouter["Classificator Router (WS :2800)"]
+        ClassificatorRing["Classificator Engine Ring (:2801, :2802, :2803)"]
         VoskASR["Vosk STT Server (WS :2700)"]
         PostgresDB[("PostgreSQL dialer_db (:5432)")]
         RedisCache[("Redis dialer_cache (:6379)")]
@@ -153,7 +155,9 @@ flowchart TD
     EnginePred & EngineMan <--> PostgresDB
     EnginePred & EngineMan -->|Originate / Redirect / Hangup| AsteriskAMI
 
-    AsteriskAMI <-->|EAGI FD 3 Audio| VoskASR
+    AsteriskAMI <-->|EAGI FD 3 Audio| ClassificatorRouter
+    ClassificatorRouter <-->|Fast-Path O(1)| ClassificatorRing
+    ClassificatorRing <-->|Kaldi WS| VoskASR
     AsteriskAMI <-->|SIP INVITE| TelcoPJSIP
     AsteriskAMI <-->|SIP Transfer| LiveKitSIP
     RouterHTTP <--> MinIOS3

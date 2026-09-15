@@ -10,7 +10,9 @@ Este documento constitui o mapa arquitetural oficial e o índice do repositório
 graph TD
     subgraph CMD["Entrada / Binários (cmd/)"]
         MainDialer["cmd/dialer/main.go\n(Serviço Principal :8080)"]
-        MainVosk["cmd/vosk-eagi/main.go\n(EAGI Vosk STT FD 3)"]
+        MainRouter["cmd/classificator-router/\n(Router Autônomo :2800)"]
+        MainEngine["cmd/classificator-engine/\n(Classificator Engine :2801/:2802/:2803)"]
+        MainVosk["cmd/vosk-eagi/main.go\n(Thin Client EAGI FD 3)"]
     end
 
     subgraph Config["Configuração (config/)"]
@@ -99,9 +101,14 @@ graph TD
 | Arquivo | LOC | Responsabilidade | Padrões |
 | :--- | :--- | :--- | :--- |
 | [`cmd/dialer/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/dialer/main.go) | 116 | Bootstrap, injeção de dependências, conexão resiliente e graceful shutdown. | Dependency Injection / Bootstrapper |
-| [`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) | 279 | Script EAGI Go para triagem ativa full-duplex, streaming FD 3 e publicação em tempo real via variáveis de canal Asterisk. | Stream Processing / Full-Duplex |
-| [`cmd/vosk-eagi/phrases.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/phrases.go) | 115 | Dicionários semânticos de operadoras, saudações humanas, normalização de texto e configuração dinâmica. | Semantic Rules / Config |
-| [`cmd/vosk-eagi/ws_client.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/ws_client.go) | 177 | Cliente WebSocket nativo RFC 6455 para streaming de PCM 8kHz mono com reconexão resiliente. | Adapter / Network Protocol |
+| [`cmd/classificator-router/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-router/main.go) | 110 | Ponto de entrada do router WebSocket :2800 e API HTTP de status/telemetria :2809. | Bootstrapper / Service Entry |
+| [`cmd/classificator-router/ring.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-router/ring.go) | 145 | Anel circular autônomo de 3 portas com Fast-Path O(1), hunting circular sob falha e contadores atômicos. | Circuit Breaker / Autonomous Ring |
+| [`cmd/classificator-router/proxy.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-router/proxy.go) | 120 | Proxy reverso duplex WebSocket com splice de buffers e failover autônomo. | Transparent Proxy / Splice |
+| [`cmd/classificator-engine/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-engine/main.go) | 155 | Ponto de entrada do engine de classificação com health check /health e orquestração de chamadas. | Bootstrapper / Service Entry |
+| [`cmd/classificator-engine/classifier.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-engine/classifier.go) | 240 | Implementação de `SemanticClassifierPort` com dicionários pré-compilados, Levenshtein e regras de humanidade. | Strategy Pattern |
+| [`cmd/classificator-engine/vosk_recognizer.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-engine/vosk_recognizer.go) | 120 | Implementação de `SpeechRecognizerPort` consumindo o Vosk ASR via WebSocket streaming. | Adapter Pattern |
+| [`cmd/classificator-engine/session.go`](file:///home/marcio/ominichat/dialer-go/cmd/classificator-engine/session.go) | 140 | Implementação de `ClassificationEnginePort` orquestrando chunks PCM e Fast-Exit com sink de eventos. | Facade / Pipeline |
+| [`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) | 165 | Script EAGI Thin Client Go desacoplado no Asterisk, comunicando com o Router (:2800) e aplicando fallback seguro. | Thin Client / Stream Forwarder |
 
 ---
 

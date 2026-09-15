@@ -28,15 +28,16 @@ O **Agente Especialista STT** é a autoridade técnica absoluta em processamento
 
 ---
 
-## 2. Fluxo da Transcrição VoIP em Tempo Real para a Tabela CDRs
+## 2. Fluxo da Transcrição VoIP em Tempo Real com o Subsistema Classificator
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Telco as Operadora (SIP/PJSIP)
     participant Ast as Asterisk PBX 20
-    participant EAGI as vosk-eagi (Go EAGI FD 3)
-    participant VoskServer as Servidor Kaldi-Vosk (:2700)
+    participant EAGI as vosk-eagi Thin Client (FD 3)
+    participant Router as Classificator-Router (:2800)
+    participant Engine as Classificator-Engine (Portas 2801/2802/2803)
     participant AMI as Dialer-Go AMI Adapter (:5038)
     participant TM as TrunkManager / ChannelManager
     participant DB as PostgreSQL (cdrs table)
@@ -44,23 +45,31 @@ sequenceDiagram
     Telco->>Ast: 200 OK (Cliente Atendeu)
     Ast->>Ast: Answer() + Dispara EAGI(vosk-eagi)
     Ast->>EAGI: Stream de Áudio PCM 8kHz via FD 3
+    EAGI->>Router: Conecta WebSocket (:2800 Fast-Path O(1))
+    Router->>Engine: Roteia para a porta ativa no anel (2801, 2802 ou 2803)
     loop Streaming em Tempo Real (Chunks de 100ms)
-        EAGI->>VoskServer: Envia Chunks PCM (1600 bytes) via WebSocket
-        VoskServer-->>EAGI: {"partial": "alo quem"} ou {"text": "alo quem fala"}
-        Note over EAGI: Normalização Semântica & Acumulação em fullText
-        EAGI->>Ast: SET VARIABLE VOSK_TRANSCRIPTION "alo quem fala"
-        Ast->>AMI: Event: VarSet (Variable: VOSK_TRANSCRIPTION, Value: "alo quem fala")
+        EAGI->>Router: Envia Chunks PCM (1600 bytes)
+        Router->>Engine: Splice Duplex I/O
+        Engine-->>Router: {"type": "transcription_partial", "text": "alo quem"}
+        Router-->>EAGI: Repassa evento JSON
+        EAGI->>Ast: SET VARIABLE VOSK_TRANSCRIPTION "alo quem"
+        Ast->>AMI: Event: VarSet (Variable: VOSK_TRANSCRIPTION, Value: "alo quem")
         AMI->>TM: handleVarSet -> handleTranscriptionUpdate(callID, text)
-        TM->>DB: UPDATE cdrs SET transcription = 'alo quem fala' WHERE id = callID
+        TM->>DB: UPDATE cdrs SET transcription = 'alo quem' WHERE id = callID
     end
-    alt Caixa Postal Detectada (MACHINE)
-        EAGI->>Ast: SET VARIABLE VOSK_AMD_STATUS "MACHINE"
-        Ast->>AMI: UserEvent(PredictiveMachine, Cause, Transcript: fullText)
-        Ast->>Ast: Hangup()
-    else Atendimento Humano Confirmado (HUMAN)
-        EAGI->>Ast: SET VARIABLE VOSK_AMD_STATUS "HUMAN"
-        Ast->>AMI: UserEvent(PredictiveHuman, Transcript: fullText)
-        Ast->>Telco: Redirect para Sala do Operador / LiveKit
+    alt Veredito Fast-Exit ou Final (HUMAN ou MACHINE)
+        Engine-->>Router: {"type": "classification_verdict", "status": "HUMAN|MACHINE", "cause": "..."}
+        Router-->>EAGI: Repassa veredito
+        EAGI->>Ast: SET VARIABLE VOSK_AMD_STATUS "HUMAN|MACHINE"
+        EAGI->>Ast: SET VARIABLE VOSK_AMD_CAUSE "${cause}"
+        EAGI->>Ast: SET VARIABLE VOSK_AMD_TEXT "${text}"
+        alt Caixa Postal (MACHINE)
+            Ast->>AMI: UserEvent(PredictiveMachine, Cause, Transcript: fullText)
+            Ast->>Ast: Hangup()
+        else Atendimento Humano (HUMAN)
+            Ast->>AMI: UserEvent(PredictiveHuman, Transcript: fullText)
+            Ast->>Telco: Redirect para Sala do Operador / LiveKit
+        end
     end
     Ast->>AMI: Event: Hangup (Cause 16)
     AMI->>TM: handleHangup()

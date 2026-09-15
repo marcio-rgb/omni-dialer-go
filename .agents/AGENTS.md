@@ -79,3 +79,31 @@ Toda e qualquer alteração, adição, remoção ou refatoração nos endpoints 
 3. **Proibição de Suposições ou Acoplamentos Ocultos:**
    - Nenhuma decisão técnica ou omissão no discador pode ser justificada sob o pretexto de que *"o OmniChat já guarda isso"* ou *"o OmniChat resolve isso no webhook"*.
    - O Dialer-Go deve funcionar de ponta a ponta com plenitude funcional e auditabilidade mesmo que o OmniChat não exista ou seja substituído por outro sistema.
+
+---
+
+## 5. Política Mandatória de Gravação de Áudio Telefônico (Dual-Channel Stereo & Compressão Assíncrona MP3)
+
+> [!IMPORTANT]
+> **REGRA GERAL DE ENGENHARIA DE ÁUDIO & PERFORMANCE:**  
+> A integridade forense das chamadas telefônicas exige a separação física absoluta entre o áudio do operador/robô (TX) e o áudio do cliente (RX), sem jamais onerar o PBX com processamento pesado de compressão durante o tráfego telefônico.
+
+### Diretrizes Mandatórias de Áudio:
+1. **Gravação Nativa em WAV PCM 16-bit 8000 Hz:**
+   - Durante a chamada telefônica no Asterisk, a gravação DEVE ocorrer estritamente no formato nativo WAV (PCM linear 16-bit mono por canal a 8.000 Hz).
+   - **Proibição de Encoding MP3 em Tempo Real no PBX:** É expressamente proibido instruir o Asterisk (`MixMonitor`) a codificar MP3 síncrono durante a chamada (via LAME/ffmpeg em tempo real). O encoding MP3 durante a chamada consome ciclos preciosos de CPU, degrada a latência RTP e introduz jitter sob rajadas de chamadas simultâneas.
+2. **Segregação Estéreo Dual-Channel Obrigatória:**
+   - Toda e qualquer gravação telefônica (Preditiva, Manual ou Receptiva) deve manter os canais físicos independentes:
+     - **Canal 1 (Left / Esquerdo):** TX - Voz do Atendente / Sistema / Prompt Institucional
+     - **Canal 2 (Right / Direito):** RX - Voz do Cliente / Lead
+   - É terminantemente proibido gravar chamadas em mono simples somando TX e RX na mesma trilha, pois impede auditoria forense, transcrição precisa e análise de barge-in.
+3. **Pós-Processamento Imediato de Fusão Estéreo (`merge-stereo`):**
+   - O comando `MixMonitor` deve obrigatoriamente acionar o pós-processamento atômico em Go ([`cmd/merge-stereo/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/merge-stereo/main.go)):
+     ```ini
+     same => n,MixMonitor(${REC_FILENAME}.wav,r(${REC_FILENAME}-rx.wav)t(${REC_FILENAME}-tx.wav),/var/lib/asterisk/agi-bin/merge-stereo "${REC_FILENAME}-tx.wav" "${REC_FILENAME}-rx.wav" "${REC_FILENAME}.wav")
+     ```
+   - O utilitário `merge-stereo` funde instantaneamente os arquivos mono em um único arquivo WAV estéreo final `${REC_FILENAME}.wav` e purga imediatamente os arquivos temporários `-tx.wav` e `-rx.wav`, mantendo o disco limpo e unificado.
+4. **Compressão para MP3 Estritamente Assíncrona (Background Job):**
+   - Caso seja necessária a redução de consumo de armazenamento em disco, a conversão de `.wav` para `.mp3` DEVE ocorrer **exclusivamente de forma assíncrona pós-chamada** (via worker em background, cron job ou rotina de offloading para storage).
+   - O arquivo MP3 comprimido DEVE obrigatoriamente preservar os **dois canais estéreo segregados** (`-ac 2 -map_channel`), garantindo que ferramentas analíticas, reprodutores e transcritores mantenham a segregação de TX e RX.
+
