@@ -25,6 +25,10 @@ func (m *mockAMIForReload) Originate(ctx context.Context, actionID, channel, con
 func (m *mockAMIForReload) Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error {
 	return nil
 }
+func (m *mockAMIForReload) TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error {
+	return nil
+}
+
 func (m *mockAMIForReload) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }

@@ -10,8 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"dialer-go/internal/domain"
 	"dialer-go/internal/ports"
 )
+
 
 type AMIClient struct {
 	host         string
@@ -301,6 +303,38 @@ func (c *AMIClient) Redirect(ctx context.Context, actionID, channel, extraChanne
 		return fmt.Errorf("timeout aguardando confirmação de Redirect")
 	}
 }
+
+// TransferToLiveKit transfere o canal do Asterisk para o LiveKit SIP via contexto cos-all-custom injetando variáveis de canal
+func (c *AMIClient) TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error {
+	actionID := fmt.Sprintf("transfer-livekit-%d", time.Now().UnixNano())
+
+	if agent != nil && agent.LiveKitRoom != "" {
+		_ = c.SetVar(ctx, fmt.Sprintf("setvar-room-%s", actionID), channel, "AGENT_ROOM", agent.LiveKitRoom)
+	}
+	if customer != nil {
+		if customer.CustomerID != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cid-%s", actionID), channel, "CUSTOMER_ID", customer.CustomerID)
+		}
+		if customer.Name != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cname-%s", actionID), channel, "CUSTOMER_NAME", customer.Name)
+		}
+		if customer.Phone != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cphone-%s", actionID), channel, "CUSTOMER_PHONE", customer.Phone)
+		}
+		if customer.Att1 != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt1-%s", actionID), channel, "CUSTOMER_ATT1", customer.Att1)
+		}
+		if customer.Att2 != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt2-%s", actionID), channel, "CUSTOMER_ATT2", customer.Att2)
+		}
+		if customer.Att3 != "" {
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt3-%s", actionID), channel, "CUSTOMER_ATT3", customer.Att3)
+		}
+	}
+
+	return c.Redirect(ctx, actionID, channel, "", "cos-all-custom", "9999", 1)
+}
+
 
 func (c *AMIClient) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	payload := fmt.Sprintf("Action: Hangup\r\nActionID: %s\r\nChannel: %s\r\nCause: %d\r\n\r\n",

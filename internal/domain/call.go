@@ -2,6 +2,23 @@ package domain
 
 import "time"
 
+// AgentRedisData representa as informações do operador aguardando chamada na fila dialer:idle_agents
+type AgentRedisData struct {
+	AgentID     string `json:"agent_id"`
+	LiveKitRoom string `json:"livekit_room"`
+}
+
+// CustomerMetadata representa os dados completos do cliente/lead transmitidos na perna telefônica SIP
+type CustomerMetadata struct {
+	CustomerID string `json:"customer_id"`
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Att1       string `json:"att1,omitempty"`
+	Att2       string `json:"att2,omitempty"`
+	Att3       string `json:"att3,omitempty"`
+}
+
+
 type CallType string
 const (
 	CallTypePredictive CallType = "PREDICTIVE"

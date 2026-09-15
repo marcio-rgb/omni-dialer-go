@@ -40,4 +40,7 @@ type CachePort interface {
 	// Operadores Disponíveis para Entrega Preditiva
 	StoreAvailableAgents(ctx context.Context, campaignID string, agents []domain.AgentDemandDTO, ttl time.Duration) error
 	GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error)
+	PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error)
+	PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error
 }
+

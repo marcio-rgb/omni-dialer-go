@@ -362,35 +362,79 @@ func (pe *PredictiveEngine) randomizeCallerID(destPhone string) string {
 
 // HandlePredictiveHuman é acionado quando o Asterisk detecta humano no triagem-amd (UserEvent PredictiveHuman)
 func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, uniqueID, phone, campaignID, leadID string) error {
-	actionID := fmt.Sprintf("pred-human-%d", time.Now().UnixNano())
 	callID := pe.channels.GetCallIDByAsterisk(channel, uniqueID)
 
-	// 1. Busca o próximo operador disponível na fila da campanha
-	agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
+	// 1. Extrai metadados do cliente a partir do canal ativo
+	var customer *domain.CustomerMetadata
+	if callID != "" {
+		activeChan := pe.channels.GetActiveChannel(callID)
+		if activeChan != nil {
+			customer = &domain.CustomerMetadata{
+				CustomerID: activeChan.CPF,
+				Name:       activeChan.Name,
+				Phone:      activeChan.Phone,
+				Att1:       activeChan.Att1,
+				Att2:       activeChan.Att2,
+				Att3:       activeChan.Att3,
+			}
+			if customer.CustomerID == "" {
+				customer.CustomerID = leadID
+			}
+		}
+	}
+	if customer == nil {
+		customer = &domain.CustomerMetadata{
+			CustomerID: leadID,
+			Phone:      phone,
+		}
+	}
+
+	// 2. Busca o próximo operador disponível na fila Redis `dialer:idle_agents` ou fallback por campanha
+	agentRedis, err := pe.cache.PopIdleAgent(ctx, 50*time.Millisecond)
 	roomName := fmt.Sprintf("sala_campanha_%s", campaignID)
 	userID := roomName
 
-	if err == nil && agent != nil && agent.AgentID != "" {
-		userID = agent.AgentID
-		roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
+	var agentData *domain.AgentRedisData
+	if err == nil && agentRedis != nil && agentRedis.AgentID != "" {
+		agentData = agentRedis
+		userID = agentRedis.AgentID
+		roomName = agentRedis.LiveKitRoom
+		if roomName == "" {
+			roomName = fmt.Sprintf("sala_agente_%s", agentRedis.AgentID)
+		}
 		if callID != "" {
-			pe.channels.AssignAgent(callID, agent.AgentID)
+			pe.channels.AssignAgent(callID, agentRedis.AgentID)
 		}
 	} else {
-		log.Printf("[PREDICTIVE-HUMAN] Nenhum agent_id individual na fila Redis para campanha %s. Utilizando sala fallback '%s'", campaignID, roomName)
+		agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
+		if err == nil && agent != nil && agent.AgentID != "" {
+			userID = agent.AgentID
+			roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
+			agentData = &domain.AgentRedisData{
+				AgentID:     agent.AgentID,
+				LiveKitRoom: roomName,
+			}
+			if callID != "" {
+				pe.channels.AssignAgent(callID, agent.AgentID)
+			}
+		} else {
+			log.Printf("[PREDICTIVE-HUMAN] Nenhum operador ocioso na fila Redis. Utilizando sala fallback '%s'", roomName)
+			agentData = &domain.AgentRedisData{
+				AgentID:     userID,
+				LiveKitRoom: roomName,
+			}
+		}
 	}
 
-	// 2. Disparo assíncrono do webhook inject-lead (sem travar a telefonia)
+	// 3. Disparo assíncrono do webhook inject-lead (sem travar a telefonia)
 	if pe.webhookClient != nil {
 		go pe.dispatchInjectLeadWebhook(callID, userID, phone, campaignID)
 	}
 
-	// 4. Define a variável AGENT_ROOM no canal do Asterisk
-	_ = pe.ami.SetVar(ctx, fmt.Sprintf("setvar-%s", actionID), channel, "AGENT_ROOM", roomName)
-
-	// 5. Redireciona o canal do cliente para o contexto cos-all-custom exten 9999 (Dial LiveKit SIP)
-	return pe.ami.Redirect(ctx, actionID, channel, "", "cos-all-custom", "9999", 1)
+	// 4. Executa a transferência no Asterisk para o LiveKit SIP com suporte aos cabeçalhos X-Customer-*
+	return pe.ami.TransferToLiveKit(ctx, channel, agentData, customer)
 }
+
 
 func (pe *PredictiveEngine) dispatchInjectLeadWebhook(callID, userID, phone, campaignID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

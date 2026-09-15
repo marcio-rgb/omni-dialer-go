@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"dialer-go/internal/core"
+	"dialer-go/internal/domain"
 	"dialer-go/internal/ports"
 )
+
 
 type mockAMI struct {
 	connected bool
@@ -25,6 +27,10 @@ func (m *mockAMI) Originate(ctx context.Context, actionID, channel, context, ext
 func (m *mockAMI) Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error {
 	return nil
 }
+func (m *mockAMI) TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error {
+	return nil
+}
+
 func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }

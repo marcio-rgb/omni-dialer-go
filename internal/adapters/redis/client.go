@@ -231,3 +231,49 @@ func (r *RedisAdapter) GetNextAvailableAgent(ctx context.Context, campaignID str
 	return &selected, nil
 }
 
+// PopIdleAgent remove e retorna o próximo operador ocioso da fila global dialer:idle_agents
+func (r *RedisAdapter) PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error) {
+	key := "dialer:idle_agents"
+	if timeout > 0 {
+		res, err := r.client.BLPop(ctx, timeout, key).Result()
+		if err == redis.Nil || len(res) < 2 {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		var agent domain.AgentRedisData
+		if err := json.Unmarshal([]byte(res[1]), &agent); err != nil {
+			return nil, err
+		}
+		return &agent, nil
+	}
+
+	val, err := r.client.LPop(ctx, key).Result()
+	if err == redis.Nil || val == "" {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var agent domain.AgentRedisData
+	if err := json.Unmarshal([]byte(val), &agent); err != nil {
+		return nil, err
+	}
+	return &agent, nil
+}
+
+// PushIdleAgent adiciona um operador ocioso ao final da fila global dialer:idle_agents
+func (r *RedisAdapter) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error {
+	if agent == nil {
+		return nil
+	}
+	key := "dialer:idle_agents"
+	data, err := json.Marshal(agent)
+	if err != nil {
+		return err
+	}
+	return r.client.RPush(ctx, key, data).Err()
+}
+
+

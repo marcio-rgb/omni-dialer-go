@@ -1,6 +1,10 @@
 package ports
 
-import "context"
+import (
+	"context"
+	"dialer-go/internal/domain"
+)
+
 
 // AMIEvent representa um pacote de evento emitido assincronamente pelo socket do Asterisk.
 type AMIEvent struct {
@@ -17,7 +21,9 @@ type AMIPort interface {
 	// Ações
 	Originate(ctx context.Context, actionID, channel, context, exten string, priority int, timeout int, callerID, account string, variables map[string]string) error
 	Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error
+	TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error
 	Hangup(ctx context.Context, actionID, channel string, cause int) error
+
 	SetVar(ctx context.Context, actionID, channel, variable, value string) error
 	Command(ctx context.Context, actionID, command string) (string, error)
 	

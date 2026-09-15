@@ -70,6 +70,13 @@ func (m *mockCachePredictive) StoreAvailableAgents(ctx context.Context, campaign
 func (m *mockCachePredictive) GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error) {
 	return &domain.AgentDemandDTO{AgentID: "agent-1", SIPRoute: "sala_agente_1"}, nil
 }
+func (m *mockCachePredictive) PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error) {
+	return &domain.AgentRedisData{AgentID: "agent-1", LiveKitRoom: "sala_agente_1"}, nil
+}
+func (m *mockCachePredictive) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error {
+	return nil
+}
+
 
 func TestPredictiveEngine_RandomizeCallerID_ZeroNormalization(t *testing.T) {
 	pe := &PredictiveEngine{}

@@ -34,6 +34,10 @@ func (m *mockAMI) Originate(ctx context.Context, actionID, channel, context, ext
 func (m *mockAMI) Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error {
 	return nil
 }
+func (m *mockAMI) TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error {
+	return nil
+}
+
 func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }
@@ -116,6 +120,13 @@ func (m *mockCache) StoreAvailableAgents(ctx context.Context, campaignID string,
 func (m *mockCache) GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error) {
 	return nil, nil
 }
+func (m *mockCache) PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error) {
+	return nil, nil
+}
+func (m *mockCache) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error {
+	return nil
+}
+
 
 func TestManualEngine_ZeroNormalization_PhoneIntegrity(t *testing.T) {
 	testCases := []struct {
