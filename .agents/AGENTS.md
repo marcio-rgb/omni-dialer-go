@@ -107,3 +107,20 @@ Toda e qualquer alteração, adição, remoção ou refatoração nos endpoints 
    - Caso seja necessária a redução de consumo de armazenamento em disco, a conversão de `.wav` para `.mp3` DEVE ocorrer **exclusivamente de forma assíncrona pós-chamada** (via worker em background, cron job ou rotina de offloading para storage).
    - O arquivo MP3 comprimido DEVE obrigatoriamente preservar os **dois canais estéreo segregados** (`-ac 2 -map_channel`), garantindo que ferramentas analíticas, reprodutores e transcritores mantenham a segregação de TX e RX.
 
+---
+
+## 6. Diretriz Pétrea de Gestão de Arquivos Asterisk via Banco (`sip_data`)
+
+> [!CAUTION]
+> **PROIBIÇÃO ABSOLUTA DE GERAR OU EDITAR ARQUIVOS DIRETAMENTE NO SERVIDOR:**
+> É expressamente proibido criar, editar, enviar via SCP ou alterar arquivos de configuração do Asterisk (`pjsip.conf`, `extensions.conf`, `amd.conf`, etc.) diretamente no sistema de arquivos do servidor.
+
+### Regras de Governança de Configurações:
+1. **Persistência Soberana no Banco de Dados (`sip_data`):**
+   - Toda e qualquer estrutura ou alteração nos arquivos de configuração do Asterisk DEVE ser montada e salva obrigatoriamente na tabela `sip_data` do PostgreSQL (`file VARCHAR(60)` e `data TEXT`) por meio da API REST (`/api/v1/configs`).
+2. **Escrita em Disco e Reload Somente ao "Aplicar":**
+   - A gravação física dos arquivos no diretório `/etc/asterisk` do container e os reloads no Asterisk PBX via AMI (`pjsip reload`, `dialplan reload`, `module reload app_amd.so`) ocorrem **exclusivamente quando a ação de aplicar for solicitada** (`?apply=true` ou `POST /api/v1/configs/apply`).
+3. **Auditabilidade e Segurança:**
+   - O sistema garante que a interface de configuração opere com pré-visualizações seguras e histórico de atualizações (`updated_at`), evitando modificações manuais acidentais ou perda de sincronismo entre instâncias.
+
+

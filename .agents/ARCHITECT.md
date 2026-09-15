@@ -74,6 +74,10 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
     - Toda chamada recebe um `correlation_id` único propagado até a tabela `execution_traces`, permitindo auditoria ponta a ponta e detecção de quebra de processo.
 12. **Soberania Absoluta de CDRs, Transcrições e Gravações de Áudio:**
     - Toda chamada, metadados de tarifação, desfechos, transcrições em tempo real (`transcription`) e os links de áudio gravado (`recording_file` e `recording_url`) residem nativamente na tabela `cdrs` do `dialer_db` e são consultados via `GET /api/v1/cdrs` (com suporte a busca textual por `q` / `search`) e `GET /api/v1/cdrs/{id}`.
+13. **Proibição Absoluta de Edição Direta de Arquivos no Servidor (Gestão Soberana via `sip_data`):**
+    - É terminantemente proibido editar ou criar arquivos de configuração do Asterisk (`pjsip.conf`, `extensions.conf`, `amd.conf`, etc.) diretamente via acesso SSH/SCP ou manipulação manual de arquivos no servidor.
+    - Todo o fluxo de configuração DEVE obrigatoriamente passar pela tabela `sip_data` no PostgreSQL (`file VARCHAR(60)` e `data TEXT`) por meio da API REST (`/api/v1/configs`).
+    - Somente no momento em que a ação de "Aplicar" for explicitamente acionada (`?apply=true` ou `POST /api/v1/configs/apply`), o sistema escreve os arquivos físicos no diretório `/etc/asterisk` e executa os reloads no PBX via AMI.
 
 ---
 
