@@ -9,7 +9,7 @@ services:
         aliases:
           - dialer-go
     environment:
-      - PORT=8080
+      - PORT=8081
       - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
       - REDIS_ADDR=dialer-redis:6379
       - REDIS_DB=0
@@ -23,27 +23,34 @@ services:
       - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
       - MINIO_BUCKET=mailings
       - MINIO_USE_SSL=false
-      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,37.60.228.113,*
-      - MAX_GLOBAL_CHANNELS=120
-      - HUMAN_RESERVED_QUOTA=10
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,84.247.135.255,*
+      - MAX_GLOBAL_CHANNELS=250
+      - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789410874
+      - UPDATE_TIMESTAMP=1789441618
     volumes:
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
     ports:
-      - "8080:8080"
+      - "8081:8081"
     deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=minha_rede"
-        - "traefik.http.routers.dialer-go.rule=Host(`api-omnichat.creditobr.org`) && PathPrefix(`/dialer-go`)"
+        - "traefik.http.routers.dialer-go.rule=Host(`dialer.creditobr.org`)"
         - "traefik.http.routers.dialer-go.entrypoints=websecure"
         - "traefik.http.routers.dialer-go.tls=true"
         - "traefik.http.routers.dialer-go.tls.certresolver=letsencryptresolver"
-        - "traefik.http.middlewares.dialer-go-stripprefix.stripprefix.prefixes=/dialer-go"
+        - "traefik.http.middlewares.dialer-go-stripprefix.stripprefix.prefixes=/dialer"
         - "traefik.http.routers.dialer-go.middlewares=dialer-go-stripprefix"
-        - "traefik.http.services.dialer-go.loadbalancer.server.port=8080"
+        - "traefik.http.services.dialer-go.loadbalancer.server.port=8081"
       placement:
         constraints:
           - node.role == manager
@@ -62,7 +69,7 @@ services:
         published: 5038
         protocol: tcp
         mode: host
-      - "10100-10400:10100-10400/udp"
+      - "10100-11000:10100-11000/udp"
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk
       - /opt/ominichat/asterisk/sounds:/var/lib/asterisk/sounds
@@ -71,6 +78,13 @@ services:
     environment:
       - VOSK_SERVER_URL=ws://dialer-vosk:2700
     deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
       placement:
         constraints:
           - node.role == manager
@@ -79,6 +93,7 @@ services:
 
   dialer-redis:
     image: redis:7-alpine
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru --save 60 1000
     networks:
       minha_rede:
         aliases:
@@ -86,6 +101,13 @@ services:
     volumes:
       - dialer_redis_data:/data
     deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
       placement:
         constraints:
           - node.role == manager
@@ -106,6 +128,13 @@ services:
         aliases:
           - dialer-vosk
     deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
       placement:
         constraints:
           - node.role == manager

@@ -77,6 +77,7 @@ func main() {
 
 	status := "UNKNOWN"
 	cause := "PENDING"
+	finalizedText := ""
 	fullText := ""
 	startTime := time.Now()
 	var firstSpeechTime time.Time
@@ -84,7 +85,17 @@ func main() {
 
 	chunkBuf := make([]byte, 1600) // 100ms de áudio PCM 16-bit 8kHz
 
-	for time.Since(startTime) < time.Duration(maxDuration*float64(time.Second)) {
+	for {
+		elapsed := time.Since(startTime)
+		// Grace period dinâmico: se o cliente começou a falar nos últimos 800ms,
+		// permite até 1.0s extra além de maxDuration para concluir a transcrição
+		if elapsed >= time.Duration(maxDuration*float64(time.Second)) {
+			isRecentSpeech := !firstSpeechTime.IsZero() && time.Since(lastSpeechTime) < 800*time.Millisecond
+			if !isRecentSpeech || elapsed >= time.Duration((maxDuration+1.0)*float64(time.Second)) {
+				break
+			}
+		}
+
 		n, readErr := audioFile.Read(chunkBuf)
 		if n > 0 {
 			if writeErr := wsClient.WriteBinary(chunkBuf[:n]); writeErr != nil {
@@ -110,6 +121,13 @@ func main() {
 				txt := normalizeText(vm.Text)
 				part := normalizeText(vm.Partial)
 
+				if txt != "" {
+					finalizedText = strings.TrimSpace(finalizedText + " " + txt)
+					fullText = finalizedText
+				} else if part != "" {
+					fullText = strings.TrimSpace(finalizedText + " " + part)
+				}
+
 				current := txt
 				if current == "" {
 					current = part
@@ -120,48 +138,52 @@ func main() {
 						firstSpeechTime = time.Now()
 					}
 					lastSpeechTime = time.Now()
-					if !strings.Contains(fullText, current) {
-						fullText = strings.TrimSpace(fullText + " " + current)
-					}
-				}
+					agiSetVar("VOSK_TRANSCRIPTION", fullText)
 
-				// 1. Checagem prioritária e inequívoca de Caixa Postal / Operadora com tolerância fonética
-				currWords := strings.Fields(current)
-				fullWords := strings.Fields(fullText)
-				for _, phrase := range highConfidenceVM {
-					normPhrase := normalizeText(phrase)
-					targetWords := strings.Fields(normPhrase)
-					maxTolerance := 1
-					if len(targetWords) > 2 {
-						maxTolerance = 2
+					// 1. CHECAGEM PRIORITÁRIA DE SAUDAÇÃO HUMANA ("Alô", "Quem fala", "Oi", etc.)
+					// Se o cliente falou qualquer saudação humana válida, confirma HUMAN instantaneamente!
+					paddedCurrent := " " + normalizeText(current) + " "
+					paddedFull := " " + normalizeText(fullText) + " "
+					isHuman := false
+					matchedGreet := ""
+					for _, greeting := range quickHumanGreetings {
+						normGreeting := normalizeText(greeting)
+						paddedGreeting := " " + normGreeting + " "
+						if strings.Contains(paddedCurrent, paddedGreeting) || strings.Contains(paddedFull, paddedGreeting) {
+							isHuman = true
+							matchedGreet = normGreeting
+							break
+						}
 					}
-					if fuzzyContainsPhrase(currWords, targetWords, maxTolerance) || fuzzyContainsPhrase(fullWords, targetWords, maxTolerance) {
-						status = "MACHINE"
-						cause = "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
-						break
-					}
-				}
 
-				if status == "MACHINE" {
-					finished.Store(true)
-					break
-				}
-
-				// 2. Checagem imediata de Saudação / Confirmação Humana ("Alô", "Quem fala", "Oi", etc.)
-				paddedCurrent := " " + normalizeText(current) + " "
-				for _, greeting := range quickHumanGreetings {
-					normGreeting := normalizeText(greeting)
-					paddedGreeting := " " + normGreeting + " "
-					if strings.Contains(paddedCurrent, paddedGreeting) {
+					if isHuman {
 						status = "HUMAN"
-						cause = "HUMAN_GREETING_BRIEF"
+						cause = "HUMAN_GREETING_" + strings.ToUpper(strings.ReplaceAll(matchedGreet, " ", "_"))
+						finished.Store(true)
 						break
 					}
-				}
 
-				if status == "HUMAN" {
-					finished.Store(true)
-					break
+					// 2. Checagem de Caixa Postal / Operadora com tolerância restrita
+					currWords := strings.Fields(current)
+					fullWords := strings.Fields(fullText)
+					for _, phrase := range highConfidenceVM {
+						normPhrase := normalizeText(phrase)
+						targetWords := strings.Fields(normPhrase)
+						maxTolerance := 0
+						if len(targetWords) >= 3 {
+							maxTolerance = 1
+						}
+						if fuzzyContainsPhrase(currWords, targetWords, maxTolerance) || fuzzyContainsPhrase(fullWords, targetWords, maxTolerance) {
+							status = "MACHINE"
+							cause = "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
+							break
+						}
+					}
+
+					if status == "MACHINE" {
+						finished.Store(true)
+						break
+					}
 				}
 			}
 		}
@@ -171,19 +193,14 @@ func main() {
 
 	if status != "MACHINE" && status != "HUMAN" {
 		_ = wsClient.WriteText(`{"eof" : 1}`)
-		if rawMsg, err := wsClient.ReadMessage(200 * time.Millisecond); err == nil && len(rawMsg) > 0 {
+		if rawMsg, err := wsClient.ReadMessage(350 * time.Millisecond); err == nil && len(rawMsg) > 0 {
 			var vm VoskMessage
 			if jsonErr := json.Unmarshal(rawMsg, &vm); jsonErr == nil {
-				candidate := normalizeText(vm.Text)
-				if candidate == "" {
-					candidate = normalizeText(vm.Partial)
-				}
-				if candidate != "" && !strings.Contains(fullText, candidate) {
-					fullText = strings.TrimSpace(fullText + " " + candidate)
-					if firstSpeechTime.IsZero() {
-						firstSpeechTime = time.Now()
-					}
-					lastSpeechTime = time.Now()
+				txt := normalizeText(vm.Text)
+				if txt != "" {
+					finalizedText = strings.TrimSpace(finalizedText + " " + txt)
+					fullText = finalizedText
+					agiSetVar("VOSK_TRANSCRIPTION", fullText)
 				}
 			}
 		}
@@ -203,25 +220,30 @@ func main() {
 	agiSetVar("VOSK_AMD_STATUS", status)
 	agiSetVar("VOSK_AMD_CAUSE", cause)
 	agiSetVar("VOSK_AMD_TEXT", fullText)
+	agiSetVar("VOSK_TRANSCRIPTION", fullText)
 }
 
 func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
-	audioBaseDir := "/var/lib/asterisk/sounds/words"
+	audioBaseDir := "/var/lib/asterisk/sounds"
 	if envBase := os.Getenv("AUDIO_CACHE_DIR"); envBase != "" {
 		audioBaseDir = envBase
-	} else if _, err := os.Stat("/var/lib/asterisk/sounds/words"); err != nil {
-		if _, err2 := os.Stat("./storage/audio_cache"); err2 == nil {
+	} else if _, err := os.Stat("/var/lib/asterisk/sounds"); err != nil {
+		if _, err2 := os.Stat("/opt/ominichat/asterisk/sounds"); err2 == nil {
+			audioBaseDir = "/opt/ominichat/asterisk/sounds"
+		} else if _, err3 := os.Stat("./storage/audio_cache"); err3 == nil {
 			audioBaseDir = "./storage/audio_cache"
 		}
 	}
 
 	targetAudio := ""
 	for _, candidate := range []string{
-		filepath.Join(audioBaseDir, "ola_tudo_bem"),
+		filepath.Join(audioBaseDir, "custom", "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "custom", "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "words", "ola_tudo_bem"),
-		filepath.Join(audioBaseDir, "base", "ola_tudo_bem"),
-		filepath.Join(audioBaseDir, "alo_tudo_bem"),
 		filepath.Join(audioBaseDir, "words", "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "ola_tudo_bem"),
+		filepath.Join(audioBaseDir, "alo_tudo_bem"),
+		filepath.Join(audioBaseDir, "base", "ola_tudo_bem"),
 		filepath.Join(audioBaseDir, "base", "alo_tudo_bem"),
 		filepath.Join(audioBaseDir, "saudacao"),
 		filepath.Join(audioBaseDir, "base", "saudacao"),
@@ -241,7 +263,6 @@ func playStructuredAudio(audioName, workWord string, finished *atomic.Bool) {
 	finished.Store(true)
 }
 
-
 func fileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir() && info.Size() > 0
@@ -255,6 +276,12 @@ func readAGIEnvironment() {
 			break
 		}
 	}
+	// Drena continuamente respostas subsequentes do Asterisk em background para evitar deadlock de pipe
+	go func() {
+		for scanner.Scan() {
+			// drena
+		}
+	}()
 }
 
 var agiMu sync.Mutex

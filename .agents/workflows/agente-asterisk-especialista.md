@@ -100,13 +100,14 @@ sequenceDiagram
 O script EAGI executa como processo filho do Asterisk com comunicação de ultra-baixa latência:
 1. **Entrada de Áudio (FD 3):** Áudio PCM linear 16-bit 8000Hz mono disponibilizado pelo Asterisk via Descritor de Arquivo 3.
 2. **Bufferização Dinâmica:** Leitura em chunks de 1600 bytes (100 ms de áudio) enviados imediatamente via WebSocket RFC 6455 ao servidor Kaldi-Vosk.
-3. **Análise Semântica em Três Vereditos:**
+3. **Streaming Contínuo de Transcrição:** A cada hipótese ou transcrição parcial/final, o EAGI despacha `SET VARIABLE VOSK_TRANSCRIPTION "<texto>"` e crava `VOSK_AMD_TEXT` no canal Asterisk, permitindo que o `TrunkManager` capture o texto em tempo real via AMI `VarSet`.
+4. **Análise Semântica em Três Vereditos:**
    - **Tabela de Caixas Postais:** `caixa postal`, `deixe seu recado`, `apos o sinal`, `nao pode atender`, `vivo informa`, `claro informa`, `tim informa`, etc. $\rightarrow$ `VOSK_AMD_STATUS=MACHINE`, `VOSK_AMD_CAUSE=VOICEMAIL_<FRASE>`.
    - **Tabela de Saudações Humanas:** `alo`, `tudo`, `tudo bem`, `tudo e voce`, `ola`, `oi`, `pronto`, `pois nao`, `quem fala`, `opa`, `bom dia`, etc. $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_<SAUDACAO>`.
    - **Fala Natural:** Fala transcrita que não se enquadre em termos de caixa postal $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_NATURAL_SPEECH`.
    - **Silêncio Após Saudação (Cliente ouvindo):** Nenhuma fala detectada ou cliente ouvindo calado $\rightarrow$ `VOSK_AMD_STATUS=HUMAN`, `VOSK_AMD_CAUSE=HUMAN_SILENCE_ASSUMED` (Regra de Ouro: nunca derrubar humano por silêncio após atendimento).
-4. **Fast-Exit (Saída Antecipada):** Assim que a transcrição parcial ou total contém qualquer saudação humana (ou termo explícito de caixa postal), o loop é interrompido imediatamente.
-5. **Descarte com Notificação AMI no Dialplan:** Ao identificar `MACHINE`, o Asterisk dispara `UserEvent(PredictiveMachine, Channel, Uniqueid, Phone, LeadId, CampaignId, Cause)` antes do `Hangup()`, permitindo que o `TrunkManager` grave o CDR com disposição `VOICEMAIL` e requebre o lead para retentativa.
+5. **Fast-Exit (Saída Antecipada):** Assim que a transcrição parcial ou total contém qualquer saudação humana (ou termo explícito de caixa postal), o loop é interrompido imediatamente.
+6. **Descarte com Notificação AMI no Dialplan:** Ao identificar `MACHINE` ou `HUMAN`, o Asterisk despacha `UserEvent(PredictiveMachine / PredictiveHuman, ..., Transcript: ${VOSK_AMD_TEXT})`, assegurando que o texto transcrito alimente de imediato o CDR para auditoria e análises preditivas.
 
 ---
 

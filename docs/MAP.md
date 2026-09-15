@@ -82,6 +82,7 @@ graph TD
 | Arquivo / Diretório | Responsabilidade | Padrões Aplicados | Governança Relacionada |
 | :--- | :--- | :--- | :--- |
 | [`.agents/ARCHITECT.md`](file:///home/marcio/ominichat/dialer-go/.agents/ARCHITECT.md) | Documento Mestre Canônico de Arquitetura, Invariantes, Grafo e Cláusula Pétrea de Autonomia. | Template Canônico Seção 4 | Regra 0.1 e 4 |
+| [`.agents/workflows/agente-especialista-sst.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-especialista-sst.md) | Especialista em Speech-to-Text (STT), Vosk, Kaldi, Whisper, VAD, Piper TTS e Transcrição em Tempo Real. | Speech Processing / Fast AMD | Governança de Voz |
 | [`ARCHITECT.md`](file:///home/marcio/ominichat/dialer-go/ARCHITECT.md) | Referência de entrada para o documento canônico em `.agents/ARCHITECT.md`. | Pointer / Bootstrap | Regra 0.1 e 4 |
 | [`GEMINI.md`](file:///home/marcio/ominichat/dialer-go/GEMINI.md) | Regras Absolutas de Engenharia para IAs. | Governança Restrita | Regra 0.1 a 8 |
 | [`README.md`](file:///home/marcio/ominichat/dialer-go/README.md) | Manual de Operação, Quickstart, Testes e Docker. | Guia Executivo | Geral |
@@ -98,7 +99,7 @@ graph TD
 | Arquivo | LOC | Responsabilidade | Padrões |
 | :--- | :--- | :--- | :--- |
 | [`cmd/dialer/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/dialer/main.go) | 116 | Bootstrap, injeção de dependências, conexão resiliente e graceful shutdown. | Dependency Injection / Bootstrapper |
-| [`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) | 246 | Script EAGI Go para triagem ativa full-duplex (execução de áudio estruturado e streaming FD 3). | Stream Processing / Full-Duplex |
+| [`cmd/vosk-eagi/main.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) | 279 | Script EAGI Go para triagem ativa full-duplex, streaming FD 3 e publicação em tempo real via variáveis de canal Asterisk. | Stream Processing / Full-Duplex |
 | [`cmd/vosk-eagi/phrases.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/phrases.go) | 115 | Dicionários semânticos de operadoras, saudações humanas, normalização de texto e configuração dinâmica. | Semantic Rules / Config |
 | [`cmd/vosk-eagi/ws_client.go`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/ws_client.go) | 177 | Cliente WebSocket nativo RFC 6455 para streaming de PCM 8kHz mono com reconexão resiliente. | Adapter / Network Protocol |
 
@@ -114,7 +115,7 @@ graph TD
 ### 2.4. Domínio & DTOs (`internal/domain/`)
 | Arquivo | LOC | Responsabilidade | Contratos & RFCs |
 | :--- | :--- | :--- | :--- |
-| [`internal/domain/call.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/call.go) | 167 | Entidades `ActiveChannel`, `CDR` (com áudio gravado e URLs), `CDRFilter`, `CDRListResponse`, enums `CallType`, `CallDisposition`. | Domínio Puro |
+| [`internal/domain/call.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/call.go) | 175 | Entidades `ActiveChannel`, `CDR` (com transcrição de voz, áudio gravado e URLs), `CDRFilter` (busca textual `Search`), `CDRListResponse`, enums `CallType`, `CallDisposition`. | Domínio Puro |
 | [`internal/domain/campaign.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/campaign.go) | 91 | Entidade `Campaign`, `CampaignStats`, enums de saturação. | `CAMPAIGN_SATURATION.md` |
 | [`internal/domain/lead.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/lead.go) | 71 | Entidade Lead (Name original e FirstName normalizado), DTOs BatchLeadItem/BatchLeadRequest/Response. | Domínio Puro |
 | [`internal/domain/trunk.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/trunk.go) | 170 | Entidade `Trunk`, DTOs de cadastro, enums de transporte e registro. | `TRUNKS_LIFECYCLE.md` |
@@ -129,7 +130,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | [`internal/ports/ami_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/ami_port.go) | 25 | Contrato de controle de telefonia Asterisk (`Originate`, `Redirect`, `Hangup`). | Secondary Port |
 | [`internal/ports/cache_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/cache_port.go) | 43 | Contrato de controle de filas e locks rápidos em memória (Redis). | Secondary Port |
-| [`internal/ports/repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go) | 45 | Contratos de persistência relacional (`Trunk`, `Lead`, `Campaign`, `Report` com CDRs, `Routing`). | Secondary Port |
+| [`internal/ports/repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go) | 47 | Contratos de persistência relacional (`Trunk`, `Lead`, `Campaign`, `Report` com CDRs e transcrição, `Routing`). | Secondary Port |
 | [`internal/ports/storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go) | 10 | Contrato de armazenamento de objetos S3/MinIO. | Secondary Port |
 | [`internal/ports/webhook_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/webhook_port.go) | 25 | Contrato de notificação de desfecho de chamadas para upstream via Webhook. | Secondary Port |
 | [`internal/ports/tts_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/tts_port.go) | 15 | Contrato de conversão texto-para-áudio PCM WAV offline via modelo neural. | Secondary Port |
@@ -140,7 +141,11 @@ graph TD
 | Arquivo | LOC | Responsabilidade | Padrões Aplicados |
 | :--- | :--- | :--- | :--- |
 | [`internal/core/channel_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go) | 349 | Gestão thread-safe de concorrência com contadores atômicos, marcação determinística de atendimento e reserva de cota humana. | Mediator / Channel Arbitrator |
-| [`internal/core/trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) | 495 | Hot-reload dinâmico de troncos, telemetria RTT, amarração Asterisk, cálculo preciso de answered_at e resolução de áudio em CDR. | Observer / Health Monitor |
+| [`internal/core/channel_manager_transcription.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager_transcription.go) | 56 | Buffer thread-safe de transcrição contínua em tempo real e lookups especializados de canal. | Mediator Extension |
+| [`internal/core/trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) | 176 | Daemon de escuta AMI, qualificação periódica de troncos e recarga de dialplan/PJSIP. | Observer / Health Monitor |
+| [`internal/core/trunk_manager_events.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_events.go) | 279 | Handlers de eventos telefônicos (`Hangup`, `UserEvent`, `VarSet`), consolidação de tarifação e gravação determinística de CDR. | Observer / Event Processor |
+| [`internal/core/trunk_manager_telemetry.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_telemetry.go) | 95 | Monitoramento assíncrono de status de registro e latência RTT de endpoints PJSIP. | Observer / Telemetry |
+| [`internal/core/trunk_manager_transcription.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_transcription.go) | 41 | Ingestão e persistência incremental de transcrição em tempo real na tabela de CDRs. | Observer / Stream Ingestion |
 | [`internal/core/call_notifier.go`](file:///home/marcio/ominichat/dialer-go/internal/core/call_notifier.go) | 179 | Despachante assíncrono de notificações de término e falhas de chamada via Webhook HTTP. | Observer / Async Notifier |
 | [`internal/core/predictive_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go) | 291 | Motor preditivo de discagem com overdialing auto-ajustável e triagem humana < 1,5s. | Strategy (Predictive) |
 | [`internal/core/manual_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go) | 91 | Motor de discagem manual com preempção prioritária e bypass de fila preditiva. | Strategy (Manual) |
@@ -158,12 +163,14 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | [`internal/adapters/ami/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go) | 348 | Cliente TCP nativo para Asterisk AMI com reconexão em background e pub-sub. | Adapter / Pub-Sub |
 | [`internal/adapters/ami/parser.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/parser.go) | 68 | Parser de mensagens textuais no formato chave-valor RFC do Asterisk AMI. | Protocol Parser |
-| [`internal/adapters/postgres/db.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/db.go) | 86 | Pool transacional `pgx/v5` com retentativas de boot, verificação de saúde e auto-migração suave de colunas. | Adapter / Connection Pool |
+| [`internal/adapters/postgres/db.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/db.go) | 87 | Pool transacional `pgx/v5` com retentativas de boot, verificação de saúde e auto-migração suave de colunas. | Adapter / Connection Pool |
 | [`internal/adapters/postgres/trunk_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/trunk_repo.go) | 219 | Repositório SQL de troncos SIP/PJSIP. | Repository |
 | [`internal/adapters/postgres/routing_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/routing_repo.go) | 67 | Repositório SQL da tabela rápida O(1) `phone_trunk_mappings`. | Repository |
 | [`internal/adapters/postgres/lead_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/lead_repo.go) | 160 | Repositório SQL de leads com inserção em chunks de 5k (200k leads) e suporte a name/first_name. | Repository |
 | [`internal/adapters/postgres/campaign_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/campaign_repo.go) | 139 | Repositório SQL de campanhas e atualização de ciclos de mailing. | Repository |
-| [`internal/adapters/postgres/report_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo.go) | 311 | Repositório SQL de métricas operacionais agregadas e listagem/busca de CDRs com suporte a gravação. | Repository |
+| [`internal/adapters/postgres/report_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo.go) | 230 | Repositório SQL de CDRs com UPSERT atômico, busca textual GIN e atualização em tempo real de transcrição. | Repository |
+| [`internal/adapters/postgres/report_repo_summary.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo_summary.go) | 136 | Repositório modular SQL para sumarização analítica de chamadas (`GetCallsSummary`). | Repository |
+| [`internal/adapters/postgres/report_repo_test.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo_test.go) | 58 | Testes unitários do repositório de relatórios com cobertura de validações de borda. | Test Suite |
 | [`internal/adapters/redis/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/redis/client.go) | 233 | Cliente Redis para filas, controle de agentes online, pausa e cache de relatórios. | Adapter / Cache |
 | [`internal/adapters/storage/minio_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/storage/minio_adapter.go) | 72 | Cliente MinIO S3 para download em streaming de arquivos de mailing. | Adapter / S3 Client |
 | [`internal/adapters/webhook/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/webhook/client.go) | 88 | Cliente HTTP para despacho de webhooks assíncronos de término de chamadas ao OmniChat. | Adapter / HTTP Client |
@@ -184,8 +191,8 @@ graph TD
 | [`internal/adapters/http/lead_batch_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/lead_batch_handler.go) | 185 | Endpoint `POST /api/v1/campaigns/{id}/leads` (carga JSON em lote, normalização e pré-renderização O(1) de nomes). | HTTP Handler |
 | [`internal/adapters/http/toggle_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/toggle_handler.go) | 97 | Endpoint `POST /api/v1/campaigns/toggle`. | HTTP Handler |
 | [`internal/adapters/http/saturation_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/saturation_handler.go) | 77 | Endpoints `GET /api/v1/campaigns/{id}/saturation` e em lote. | HTTP Handler |
-| [`internal/adapters/http/report_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/report_handler.go) | 304 | Endpoints `GET /api/v1/reports/calls-summary`, `GET /api/v1/cdrs` e `GET /api/v1/cdrs/{id}`. | HTTP Handler |
-| [`internal/adapters/http/report_handler_test.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/report_handler_test.go) | 172 | Testes unitários para validação de entrada, filtros e paginação de CDRs. | Test Suite |
+| [`internal/adapters/http/report_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/report_handler.go) | 309 | Endpoints `GET /api/v1/reports/calls-summary`, `GET /api/v1/cdrs` (com busca textual `q`/`search`) e `GET /api/v1/cdrs/{id}`. | HTTP Handler |
+| [`internal/adapters/http/report_handler_test.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/report_handler_test.go) | 263 | Testes unitários para validação de entrada, filtros, busca de transcrição e paginação de CDRs. | Test Suite |
 | [`internal/adapters/http/trunk_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/trunk_handler.go) | 388 | CRUD de troncos SIP/PJSIP (`/api/v1/trunks`). | HTTP Handler |
 | [`internal/adapters/http/health_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/health_handler.go) | 69 | Endpoint de telemetria `GET /health` e `GET /api/v1/health`. | Health Check Handler |
 | [`internal/adapters/http/audio_words_handler.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/http/audio_words_handler.go) | 117 | Endpoints `POST /api/v1/audio/words` (upsert) e `GET/POST /api/v1/audio/preview` (concatenação). | HTTP Handler |
@@ -196,4 +203,4 @@ graph TD
 ### 2.9. Persistência Relacional SQL (`database/`)
 | Arquivo | LOC | Responsabilidade |
 | :--- | :--- | :--- |
-| [`database/schema.sql`](file:///home/marcio/ominichat/dialer-go/database/schema.sql) | 358 | DDL das tabelas (`trunks`, `phone_trunk_mappings`, `campaigns`, `leads` [name, first_name], `cdrs` [recording_file, recording_url], `execution_traces`) e 4 stored procedures canônicas ACID. |
+| [`database/schema.sql`](file:///home/marcio/ominichat/dialer-go/database/schema.sql) | 363 | DDL das tabelas (`trunks`, `phone_trunk_mappings`, `campaigns`, `leads`, `cdrs` [transcription GIN index, recording_file, recording_url], `execution_traces`) e 4 stored procedures canônicas ACID. |

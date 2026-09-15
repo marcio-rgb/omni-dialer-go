@@ -223,6 +223,11 @@ func (h *ReportHandler) ListCDRs(w http.ResponseWriter, r *http.Request) {
 		d := domain.CallDisposition(disp)
 		filter.Disposition = &d
 	}
+	if q := r.URL.Query().Get("q"); q != "" {
+		filter.Search = &q
+	} else if search := r.URL.Query().Get("search"); search != "" {
+		filter.Search = &search
+	}
 
 	if startStr := r.URL.Query().Get("start_date"); startStr != "" {
 		if st, err := time.Parse(time.RFC3339, startStr); err == nil {

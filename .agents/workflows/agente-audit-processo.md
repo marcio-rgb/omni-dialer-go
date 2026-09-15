@@ -129,7 +129,7 @@ sequenceDiagram
 - **PBX:** `[triagem-amd]` em [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf): Triagem Ativa Full-Duplex via [`EAGI`](file:///home/marcio/ominichat/dialer-go/cmd/vosk-eagi/main.go) com reprodução imediata de saudação única natural (`alo_tudo_bem`), disparo de `UserEvent(CallAnswered)` para registro determinístico de `answered_at`, e transcrição paralela no `FD 3` via Vosk STT (zero *dead air*, eliminação do AMD passivo).
 - **Humano:** [`PredictiveEngine.HandlePredictiveHuman`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L318). Com operador: define `AGENT_ROOM` e [`ami.Redirect`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go#L273) para `cos-all-custom` exten `9999`. Sem operador (abandono < 2s): `SetInflatedSuccessRate(30s)` e `ami.Hangup(Cause 16)`.
 - **Caixa Postal / Operadora:** Ao detectar mensagem de operadora com termos inequívocos (`VOICEMAIL_*`), o Asterisk emite `UserEvent(PredictiveMachine)` e desliga (`Hangup 16`). O `TrunkManager` define `disposition = VOICEMAIL` em memória, assegurando persistência fidedigna no CDR e requebramento do lead para retentativa. Silêncio ou saudações humanas são comutados como `HUMAN` por segurança.
-- **Gravação de CDR e Armazenamento de Áudio:** No encerramento da chamada via `SaveCDR`, persistindo `initiated_at`, `answered_at`, `ended_at`, `duration_seconds`, `billsec_seconds`, `ring_seconds`, `recording_file` e `recording_url`. O volume do Asterisk (`/opt/ominichat/asterisk/monitor`) é montado em modo leitura (`/var/spool/asterisk/monitor:ro`) no contêiner `dialer-go`, permitindo streaming com suporte a HTTP 206 Range e CORS via `GET /api/v1/recordings/*`.
+- **Gravação de CDR e Armazenamento de Áudio:** No encerramento da chamada via `SaveCDR`, persistindo `initiated_at`, `answered_at`, `ended_at`, `duration_seconds`, `billsec_seconds`, `ring_seconds`, `recording_file`, `recording_url` e `transcription` (transcrição do áudio em tempo real via Vosk STT com busca textual). O volume do Asterisk (`/opt/ominichat/asterisk/monitor`) é montado em modo leitura (`/var/spool/asterisk/monitor:ro`) no contêiner `dialer-go`, permitindo streaming com suporte a HTTP 206 Range e CORS via `GET /api/v1/recordings/*`.
 
 ---
 
@@ -169,6 +169,7 @@ sequenceDiagram
 | Método / Rotina | Arquivo / Origem | Entrada | Saída | Grava CDR? |
 | :--- | :--- | :--- | :--- | :---: |
 | [`ReportRepo.SaveCDR`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo.go#L24) | `report_repo.go` | `ctx, *domain.CDR` | `error` | **SIM** |
+| [`ReportRepo.UpdateCDRTranscription`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/report_repo.go#L60) | `report_repo.go` | `ctx, cdrID, text` | `error` | **SIM (Atualiza Transcrição)** |
 | `fn_audit_persist_predictive_result` | [`schema.sql`](file:///home/marcio/ominichat/dialer-go/database/schema.sql#L161) | `(p_cdr_id, p_tenant_id, p_campaign_id, ...)` | `JSONB` | **SIM** |
 | [`PredictiveEngine.ProcessDemand`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L35) | `predictive_engine.go` | `ctx, *PredictiveDemandRequest` | `*PredictiveDemandResponse, error` | Não |
 | [`ManualEngine.DialManual`](file:///home/marcio/ominichat/dialer-go/internal/core/manual_engine.go#L29) | `manual_engine.go` | `ctx, *ManualCallRequest` | `*ManualCallResponse, error` | Não |
@@ -224,9 +225,9 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
   - *Efetividade nos Dados:* Garante transição imediata para `DIALING`, incremento de `attempts_count` e timestamp `dialed_at`, impedindo que múltiplos motores de discagem peguem o mesmo lead.
 
 ### 7.2. Auditoria de Desfecho: Persistência ACID, CDR e Receptivo O(1)
-- **Função:** `fn_audit_persist_predictive_result(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, p_disposition, p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds, p_trunk_used, p_sip_route, p_max_attempts, p_recording_file, p_recording_url)`
+- **Função:** `fn_audit_persist_predictive_result(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, p_disposition, p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds, p_trunk_used, p_sip_route, p_max_attempts, p_recording_file, p_recording_url, p_transcription)`
 - **Auditoria de Resultados:**
-  1. **Escrita do CDR:** Grava em `cdrs` todos os tempos de tarifação, desfecho SIP/Q.850 e os caminhos/URLs de áudio gravado (`recording_file`, `recording_url`).
+  1. **Escrita do CDR:** Grava em `cdrs` todos os tempos de tarifação, desfecho SIP/Q.850, transcrição de fala (`transcription`) e os caminhos/URLs de áudio gravado (`recording_file`, `recording_url`).
   2. **Transição de Lead:** Sucesso (`DELIVERED`, `ANSWERED`, `INVALID_NUMBER`) ou limite de tentativas -> `COMPLETED`. Falha temporária (`VOICEMAIL`, `AMD_MACHINE`, `NO_ANSWER`, `BUSY`) -> `QUEUED`.
   3. **Receptivo O(1):** UPSERT na tabela `phone_trunk_mappings` (`last_trunk`, `last_project`, `last_sip_route`).
 - **Validação de Efetividade:**
@@ -235,7 +236,8 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
       'cdr-' || gen_random_uuid(), 'default', '3', '5511999998888', 101, 'agent-1',
       'DELIVERED', 200, 16, 45, 30, 15, 'trunk-vivo', 'sala_agente_1', 5,
       '/var/spool/asterisk/monitor/2026/09/14/063000-PRED-5511999998888-1.wav',
-      'https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-5511999998888-1.wav'
+      'https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-5511999998888-1.wav',
+      'alo tudo bem gostaria de falar com marcio'
   );
   ```
   - *Efetividade nos Dados:* Cobre 100% dos efeitos colaterais da finalização de chamadas preditivas em uma transação única. Para chamadas manuais, a auditoria valida a escrita direta em `cdrs` com `call_type = 'MANUAL'` e metadados de gravação.
@@ -320,6 +322,7 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
 | **Report Repo** | `ListCDRs` | `(ctx context.Context, filter domain.CDRFilter)` | `(*domain.CDRListResponse, error)` | Não | Não |
 | **Report Repo** | `GetCDRByID` | `(ctx context.Context, tenantID, cdrID string)` | `(*domain.CDR, error)` | Não | Não |
 | **Report Repo** | `SaveCDR` | `(ctx context.Context, c *domain.CDR)` | `error` | Sim (Toggle) | **SIM** |
+| **Report Repo** | `UpdateCDRTranscription` | `(ctx context.Context, cdrID string, transcription string)` | `error` | Sim (Toggle) | **SIM (Transcrição)** |
 | **DB Stored Proc** | `fn_audit_persist_predictive_result` | `(p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_lead_id, p_agent_id, ...)` | `JSONB` | Sim (Toggle) | **SIM** |
 | **DB Stored Proc** | `fn_audit_claim_predictive_batch` | `(p_campaign_id, p_tenant_id, p_limit, p_cooldown_hours)` | `TABLE (lead_id, campaign_id, ...)` | Sim (Toggle) | Não |
 | **DB Stored Proc** | `fn_audit_recycle_campaign_leads` | `(p_campaign_id, p_tenant_id)` | `JSONB` | Sim (Toggle) | Não |

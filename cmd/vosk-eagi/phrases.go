@@ -185,7 +185,7 @@ func fuzzyContainsPhrase(textWords []string, targetWords []string, maxDistance i
 		if window == targetJoined {
 			return true
 		}
-		if levenshtein(window, targetJoined) <= maxDistance {
+		if maxDistance > 0 && levenshtein(window, targetJoined) <= maxDistance {
 			return true
 		}
 	}
@@ -204,57 +204,62 @@ func ClassifyCall(metrics CallMetrics) (status, reason string) {
 
 	paddedText := " " + normText + " "
 
-	// 1. CHECAGEM DE SAUDAÇÃO HUMANA PRIORITÁRIA
-	// Se começou com saudação humana e não se estendeu em discurso longo, é humano
+	// 1. CHECAGEM DE SAUDAÇÃO HUMANA PRIORITÁRIA (REGRA DE OURO INVIOLÁVEL)
+	// Se o cliente disse qualquer saudação humana ("alô", "oi", "pronto", "fala", etc.),
+	// é HUMANO INCONDICIONAL. Jamais derrubar por dúvida ou contagem de palavras.
 	hasGreeting := false
+	matchedGreeting := ""
 	for _, greeting := range greetings {
 		if strings.Contains(paddedText, " "+greeting+" ") {
 			hasGreeting = true
+			matchedGreeting = greeting
 			break
 		}
 	}
 
 	if hasGreeting {
-		// Humano falando naturalmente (ex: "Alô, bom dia! Quem fala por gentileza?")
-		if wordCount <= 8 && metrics.SpeechDurationSec <= 3.5 {
-			return "HUMAN", "HUMAN_GREETING_CONFIRMED"
+		// Salvaguarda extrema: apenas se houver uma frase INEQUÍVOCA e LONGA de caixa postal
+		// (ex: "deixe seu recado apos o sinal" ou "sua chamada esta sendo encaminhada")
+		// poderíamos considerar máquina. Caso contrário, é sempre humano.
+		hasExplicitLongVM := false
+		for _, normPhrase := range vmPhrases {
+			targetWords := strings.Fields(normPhrase)
+			if len(targetWords) >= 4 && fuzzyContainsPhrase(words, targetWords, 0) {
+				hasExplicitLongVM = true
+				break
+			}
 		}
-		// Se disse alô e calou a boca por mais de 400ms, transfere imediatamente
-		if metrics.SilenceAfterSec >= 0.4 && wordCount <= 10 {
-			return "HUMAN", "HUMAN_GREETING_AND_PAUSE"
+		if !hasExplicitLongVM {
+			return "HUMAN", "HUMAN_GREETING_" + strings.ToUpper(strings.ReplaceAll(matchedGreeting, " ", "_"))
 		}
 	}
 
-	// 2. DETECÇÃO DE CAIXA POSTAL / URA DE OPERADORA
+	// 2. DETECÇÃO DE CAIXA POSTAL / URA DE OPERADORA (COM TOLERÂNCIA RESTRITA)
 	for _, normPhrase := range vmPhrases {
 		targetWords := strings.Fields(normPhrase)
-		maxTolerance := 1
-		if len(targetWords) > 2 {
-			maxTolerance = 2
+		// Frases de 1 ou 2 palavras exigem casamento exato (tolerância 0) para evitar falso positivo
+		maxTolerance := 0
+		if len(targetWords) >= 3 {
+			maxTolerance = 1 // Frases com 3 ou mais palavras toleram no máximo 1 caractere de desvio
 		}
 
 		if fuzzyContainsPhrase(words, targetWords, maxTolerance) {
-			// Salvaguarda: se tiver dito "alô" no início, só classifica como máquina
-			// se a frase de caixa tiver vindo explicitamente com volume alto de palavras
-			if hasGreeting && wordCount <= 4 {
-				return "HUMAN", "HUMAN_GREETING_OVERRIDE"
-			}
 			return "MACHINE", "VOICEMAIL_MATCH_" + strings.ToUpper(strings.ReplaceAll(normPhrase, " ", "_"))
 		}
 	}
 
 	// 3. ANÁLISE DE MONÓLOGO CONTÍNUO (URAs institucionais / secretárias longas)
-	// Só aciona se a fala for longa, sem nenhuma pausa relevante e SEM saudação de resposta curta
-	if metrics.SpeechDurationSec >= 4.2 && wordCount >= 12 && metrics.SilenceAfterSec < 0.6 && !hasGreeting {
+	// Fala contínua sem pausas e com vocabulário extenso sem saudação
+	if metrics.SpeechDurationSec >= 3.0 && wordCount >= 10 && metrics.SilenceAfterSec < 0.5 {
 		return "MACHINE", "CONTINUOUS_MONOLOGUE_DETECTED"
 	}
 
-	// 4. CLIENTE COM RESPOSTA CURTA OU EM SILÊNCIO APÓS ATENDER
+	// 4. CLIENTE EM SILÊNCIO OU COM RESPOSTA CURTA
 	if wordCount <= 3 {
 		return "HUMAN", "HUMAN_NATURAL_PAUSE"
 	}
 
-	// 5. REGRA DE SEGURANÇA (Dúvida sempre entrega para o operador)
+	// 5. REGRA DE SEGURANÇA GERAL (Dúvida sempre entrega para o operador)
 	return "HUMAN", "FALLBACK_ASSUMED_HUMAN"
 }
 

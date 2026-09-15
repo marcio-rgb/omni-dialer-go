@@ -79,6 +79,7 @@ func autoMigrate(ctx context.Context, pool *pgxpool.Pool) {
 	queries := []string{
 		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_file VARCHAR(512);`,
 		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_url VARCHAR(512);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS transcription TEXT;`,
 	}
 	for _, q := range queries {
 		_, _ = pool.Exec(migrateCtx, q)

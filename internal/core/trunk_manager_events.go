@@ -52,6 +52,8 @@ func (tm *TrunkManager) handleVarSet(ctx context.Context, attrs map[string]strin
 		if value != "" {
 			tm.channels.SetRecordingFile(astChannel, uniqueID, value)
 		}
+	} else if variable == "VOSK_TRANSCRIPTION" || variable == "VOSK_AMD_TEXT" {
+		tm.handleTranscriptionUpdate(ctx, astChannel, uniqueID, value)
 	}
 }
 
@@ -160,9 +162,19 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 		recURLPtr = &recURL
 	}
 
+	var transPtr *string
+	if activeChan.Transcription != "" {
+		transPtr = &activeChan.Transcription
+	}
+
+	cdrID := activeChan.ChannelID
+	if cdrID == "" {
+		cdrID = fmt.Sprintf("cdr-%d", now.UnixNano())
+	}
+
 	if repRepo != nil {
 		cdr := &domain.CDR{
-			ID:              fmt.Sprintf("cdr-%d", now.UnixNano()),
+			ID:              cdrID,
 			TenantID:        activeChan.TenantID,
 			CampaignID:      activeChan.CampaignID,
 			Phone:           activeChan.Phone,
@@ -177,6 +189,7 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 			TrunkUsed:       activeChan.TrunkID,
 			RecordingFile:   recFilePtr,
 			RecordingURL:    recURLPtr,
+			Transcription:   transPtr,
 			CreatedAt:       activeChan.StartedAt,
 			InitiatedAt:     &activeChan.StartedAt,
 			AnsweredAt:      answeredAt,
@@ -207,86 +220,6 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 	}
 }
 
-// cleanTrunkID normaliza identificadores de troncos SIP/PJSIP.
-func cleanTrunkID(raw string) string {
-	trunkID := raw
-	if strings.HasPrefix(trunkID, "sip:") {
-		trunkID = strings.TrimPrefix(trunkID, "sip:")
-	}
-	if idx := strings.Index(trunkID, "/"); idx != -1 {
-		trunkID = trunkID[:idx]
-	}
-	if idx := strings.Index(trunkID, "@"); idx != -1 {
-		trunkID = trunkID[:idx]
-	}
-	if idx := strings.Index(trunkID, ":"); idx != -1 {
-		trunkID = trunkID[:idx]
-	}
-	trunkID = strings.TrimSuffix(trunkID, "-aor")
-	trunkID = strings.TrimSuffix(trunkID, "-reg")
-	return trunkID
-}
-
-// handleContactStatus atualiza a telemetria de latência (RTT) e saúde dos endpoints PJSIP.
-func (tm *TrunkManager) handleContactStatus(ctx context.Context, attrs map[string]string) {
-	rawID := attrs["EndpointName"]
-	if rawID == "" {
-		rawID = attrs["AOR"]
-	}
-	trunkID := cleanTrunkID(rawID)
-	if trunkID == "" {
-		return
-	}
-
-	status := attrs["ContactStatus"] // Reachable, Unreachable, NonQualified, Unknown, Removed
-	rttUS, _ := strconv.ParseFloat(attrs["RoundtripUsec"], 64)
-	rttMS := rttUS / 1000.0
-
-	healthStatus := "ONLINE"
-	if status == "Unreachable" || status == "Removed" {
-		healthStatus = "UNREACHABLE"
-	} else if status == "Unknown" {
-		healthStatus = "OFFLINE"
-	}
-
-	activeChans := tm.channels.GetTrunkActiveCount(trunkID)
-	health := domain.TrunkHealth{
-		Status:         healthStatus,
-		LatencyMS:      rttMS,
-		ActiveChannels: activeChans,
-		LastQualifyAt:  time.Now(),
-	}
-
-	_ = tm.cache.SetTrunkHealth(ctx, trunkID, health, 24*time.Hour)
-}
-
-// handleRegistry rastreia o estado de registro SIP de troncos autenticados com operadoras.
-func (tm *TrunkManager) handleRegistry(ctx context.Context, attrs map[string]string) {
-	trunkID := cleanTrunkID(attrs["Username"])
-	if trunkID == "" {
-		return
-	}
-	state := attrs["Status"] // Registered, Rejected, Request Sent, Failed, Unregistered
-
-	healthStatus := "REGISTERED"
-	if state == "Rejected" {
-		healthStatus = "REJECTED"
-	} else if state == "Unregistered" || state == "Failed" {
-		healthStatus = "OFFLINE"
-	} else if state != "Registered" {
-		healthStatus = state
-	}
-
-	activeChans := tm.channels.GetTrunkActiveCount(trunkID)
-	health := domain.TrunkHealth{
-		Status:         healthStatus,
-		ActiveChannels: activeChans,
-		LastQualifyAt:  time.Now(),
-	}
-
-	_ = tm.cache.SetTrunkHealth(ctx, trunkID, health, 24*time.Hour)
-}
-
 // handleNewstate rastreia transições de canal para UP (atendido).
 func (tm *TrunkManager) handleNewstate(ctx context.Context, attrs map[string]string) {
 	if attrs["ChannelState"] == "6" || attrs["ChannelStateDesc"] == "Up" {
@@ -302,6 +235,15 @@ func (tm *TrunkManager) handleUserEvent(ctx context.Context, attrs map[string]st
 	phone := attrs["Phone"]
 	campaignID := attrs["CampaignId"]
 	leadID := attrs["LeadId"]
+
+	// Captura e sincroniza transcrição anexada ao UserEvent se disponível
+	transcript := attrs["Transcript"]
+	if transcript == "" {
+		transcript = attrs["Transcription"]
+	}
+	if transcript != "" {
+		tm.handleTranscriptionUpdate(ctx, channel, uniqueID, transcript)
+	}
 
 	tm.mu.RLock()
 	pred := tm.predictive

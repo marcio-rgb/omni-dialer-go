@@ -165,6 +165,7 @@ graph TD
 | `CampaignRepository` | `SetStatus` | `SetStatus(ctx context.Context, tenantID, campaignID string, status domain.CampaignStatus) (*domain.Campaign, error)` |
 | `CampaignRepository` | `IncrementCycle` | `IncrementCycle(ctx context.Context, campaignID string) error` |
 | `ReportRepository` | `SaveCDR` | `SaveCDR(ctx context.Context, cdr *domain.CDR) error` |
+| `ReportRepository` | `UpdateCDRTranscription` | `UpdateCDRTranscription(ctx context.Context, cdrID string, transcription string) error` |
 | `ReportRepository` | `GetCallsSummary` | `GetCallsSummary(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string) (*domain.CallsSummaryResponse, error)` |
 | `ReportRepository` | `ListCDRs` | `ListCDRs(ctx context.Context, filter domain.CDRFilter) (*domain.CDRListResponse, error)` |
 | `ReportRepository` | `GetCDRByID` | `GetCDRByID(ctx context.Context, tenantID, cdrID string) (*domain.CDR, error)` |
@@ -203,7 +204,7 @@ graph TD
 
 ## 5. Engenharia dos Motores Centrais (`internal/core/`)
 
-### 5.1. `core.ChannelManager` ([`channel_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go))
+### 5.1. `core.ChannelManager` ([`channel_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager.go) & [`channel_manager_transcription.go`](file:///home/marcio/ominichat/dialer-go/internal/core/channel_manager_transcription.go))
 - **Campos de Controle:**
   - `activeGlobalCalls atomic.Int32`: Contador atômico global.
   - `activeHumanCalls atomic.Int32`: Contador exclusivo de pernas humanas.
@@ -218,6 +219,10 @@ graph TD
   - `AssignAgent(callID, agentID string)`: Vincula operador humano à chamada e aloca cota humana.
   - `SetCallDisposition(callID string, disp domain.CallDisposition)`: Define disposição explícita da chamada (AMD, Abandono, etc.).
   - `LinkAsteriskChannel(callID, astChannel, uniqueID string)`: Vincula canais Asterisk à chamada.
+  - `SetTranscription(callID, text string)`: Atualiza buffer de transcrição acumulada thread-safe no canal ativo.
+  - `GetTranscription(callID string) string`: Recupera texto transcrito até o momento.
+  - `GetActiveChannel(callID string) *domain.ActiveChannel`: Busca canal por identificador único determinístico.
+  - `GetActiveChannelByAsterisk(astChannel, uniqueID string) *domain.ActiveChannel`: Localiza canal indexado por identificador Asterisk.
   - `ReconcileCounters(ctx context.Context)`: Reconciliação em lote dos contadores contra o mapa real.
 
 ### 5.2. `core.PredictiveEngine` ([`predictive_engine.go`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go))
@@ -246,13 +251,14 @@ graph TD
   - **Regra de Corrupção Total:** Se as primeiras 30 linhas forem inválidas, aborta imediatamente (`CORRUPTED_FILE`).
   - Grava leads válidos no Postgres em lote e abastece fila Redis (`PushLeads`).
 
-### 5.5. `core.TrunkManager` ([`trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go) & [`trunk_manager_events.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_events.go))
+### 5.5. `core.TrunkManager` ([`trunk_manager.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager.go), [`trunk_manager_events.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_events.go), [`trunk_manager_telemetry.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_telemetry.go), [`trunk_manager_transcription.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_transcription.go))
 - Segregação modular canônica para cumprimento estrito do limite de linhas (< 350 linhas por arquivo).
 - `StartDaemon(ctx context.Context)`: Inicia goroutines paralelas para escuta de eventos AMI e qualify loop (ticker de 30s).
-- `handleUserEvent`: Despacha eventos telefônicos (`CallAnswered`, `PredictiveHuman`, `PredictiveAi`, `PredictiveMachine`, `InboundCall`). Em `PredictiveMachine`, define atomicamente `SetCallDisposition(callID, domain.DispositionVoicemail)`.
-- `handleHangup`: Consolida duração, ring time, billsec, link de gravação e persiste o CDR com a disposição canônica (`VOICEMAIL`, `ANSWERED`, etc.).
-- `handleContactStatus`: Rastreia RTT e disponibilidade de endpoints PJSIP.
-- `handleRegistry`: Rastreia status de registros de troncos com autenticação.
+- `handleVarSet`: Intercepta variáveis de canal em tempo real (`VOSK_TRANSCRIPTION`, `VOSK_AMD_TEXT`) e persiste streaming contínuo no CDR via `handleTranscriptionUpdate`.
+- `handleUserEvent`: Despacha eventos telefônicos (`CallAnswered`, `PredictiveHuman`, `PredictiveAi`, `PredictiveMachine`, `InboundCall`). Captura campo `Transcript` nos eventos e persiste atomicamente no buffer da chamada.
+- `handleHangup`: Consolida duração, ring time, billsec, link de gravação, transcrição acumulada final e persiste o CDR (`SaveCDR` UPSERT) com a disposição canônica (`VOICEMAIL`, `ANSWERED`, etc.).
+- `handleContactStatus`: Rastreia RTT e disponibilidade de endpoints PJSIP ([`trunk_manager_telemetry.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_telemetry.go)).
+- `handleRegistry`: Rastreia status de registros de troncos com autenticação ([`trunk_manager_telemetry.go`](file:///home/marcio/ominichat/dialer-go/internal/core/trunk_manager_telemetry.go)).
 - `SetNotifier(notifier *CallNotifier)`: Injeta o despachador de webhooks assíncronos de chamadas.
 - `ReloadPBXTrunks(ctx context.Context) error`: Reconcilia contadores e dispara `pjsip reload` e `dialplan reload`.
 

@@ -688,6 +688,7 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
 | `campaign_id`| `string` | Não | - | Filtra chamadas de uma campanha específica. |
 | `phone` | `string` | Não | - | Filtra chamadas por número de telefone. |
 | `disposition`| `string` | Não | - | Filtra por desfecho (`ANSWERED`, `DELIVERED`, `VOICEMAIL`, etc.). |
+| `search` / `q`| `string`| Não | - | Busca textual livre em número de telefone ou transcrição Vosk. |
 | `start_date` | `ISO 8601`| Não | - | Filtro temporal inicial (`created_at >= start_date`). |
 | `end_date` | `ISO 8601`| Não | - | Filtro temporal final (`created_at <= end_date`). |
 | `page` | `integer` | Não | `1` | Número da página (mínimo: 1). |
@@ -704,7 +705,7 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
     "total_pages": 1,
     "cdrs": [
       {
-        "id": "cdr-chan-1726302600.12",
+        "id": "pred-550e8400-e29b-41d4-a716-446655440000",
         "tenant_id": "org_alpha",
         "campaign_id": "camp-99",
         "phone": "11999998888",
@@ -718,7 +719,8 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
         "ring_seconds": 5,
         "trunk_used": "trunk-pjsip-01",
         "recording_file": "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
-        "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+        "recording_url": "https://dialer.creditobr.org/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+        "transcription": "alo bom dia quem fala e da central",
         "created_at": "2026-09-14T06:30:00Z",
         "initiated_at": "2026-09-14T06:30:00Z",
         "answered_at": "2026-09-14T06:30:05Z",
@@ -739,7 +741,7 @@ Recupera o registro canônico de uma chamada individual através do seu identifi
 {
   "success": true,
   "data": {
-    "id": "cdr-chan-1726302600.12",
+    "id": "pred-550e8400-e29b-41d4-a716-446655440000",
     "tenant_id": "org_alpha",
     "phone": "11999998888",
     "call_type": "PREDICTIVE",
@@ -749,7 +751,8 @@ Recupera o registro canônico de uma chamada individual através do seu identifi
     "ring_seconds": 5,
     "trunk_used": "trunk-pjsip-01",
     "recording_file": "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
-    "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+    "recording_url": "https://dialer.creditobr.org/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
+    "transcription": "alo bom dia quem fala e da central",
     "created_at": "2026-09-14T06:30:00Z"
   }
 }
@@ -1178,6 +1181,7 @@ User-Agent: DialerGo-WebhookNotifier/1.0
 | `started_at` | `ISO 8601` | Timestamp do início da tentativa. |
 | `ended_at` | `ISO 8601` | Timestamp do desligamento da perna. |
 | `recording_url` | `string` | URL pública de streaming/download da gravação. |
+| `transcription` | `string` | Transcrição acumulada em tempo real pelo Vosk STT. |
 | `timestamp` | `integer` | Unix timestamp em segundos do momento do disparo. |
 
 ##### Exemplo de Payload Enviado:
@@ -1199,7 +1203,8 @@ User-Agent: DialerGo-WebhookNotifier/1.0
   "ring_seconds": 6,
   "started_at": "2026-09-14T02:15:00Z",
   "ended_at": "2026-09-14T02:16:04Z",
-  "recording_url": "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-MAN-11999998888-1.wav",
+  "recording_url": "https://dialer.creditobr.org/api/v1/recordings/2026/09/14/063000-MAN-11999998888-1.wav",
+  "transcription": "alo quem fala",
   "timestamp": 1789352164
 }
 ```

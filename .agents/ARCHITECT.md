@@ -35,15 +35,15 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
    - Triagem em duas etapas: Asterisk `app_amd` nativo seguido de análise semântica em tempo real com Vosk STT via EAGI Go (`cmd/vosk-eagi`) na porta :2700, entregando o áudio ao operador em menos de 1,5 segundo.
 5. **Comutação e Destino de Áudio:**
    - Comutação via protocolo SIP para operadores humanos e salas de agentes virtuais de voz (LiveKit).
-6. **Soberania do Histórico e Gravações:**
-   - Persistência atômica de CDRs com caminhos físicos (`recording_file`) e URLs de streaming (`recording_url`) na tabela `cdrs` do `dialer_db`.
+6. **Soberania do Histórico, Transcrições e Gravações:**
+   - Persistência atômica de CDRs com transcrição de fala em tempo real (`transcription`) via Vosk STT, caminhos físicos (`recording_file`) e URLs de streaming (`recording_url`) na tabela `cdrs` do `dialer_db` com suporte a busca textual integrada.
 
 ### O que o Dialer-Go NÃO faz:
 - ❌ **NÃO altera, modifica ou edita código de outros sistemas:** Proibido tocar no código do OmniChat, CRMs, bots ou outras aplicações.
 - ❌ **NÃO processa regras de CRM, funis de venda ou cadastro de clientes:** Exclusividade dos sistemas clientes externos.
 - ❌ **NÃO executa raciocínio de LLM ou síntese de voz (TTS) de agentes conversacionais:** Responsabilidade do Estúdio IA / LiveKit Agents.
 - ❌ **NÃO gerencia servidores WebRTC de borda de mídia:** Responsabilidade do LiveKit Server.
-- ❌ **NÃO transcreve conversas completas pós-atendimento:** O Vosk STT via EAGI atua exclusivamente na triagem inicial de até 3 segundos para identificação de secretária vs. humano.
+- ❌ **NÃO transcreve conversas completas pós-atendimento:** O Vosk STT via EAGI atua na triagem inicial e na captura da fala de abertura, persistindo no CDR para facilitar auditorias preditivas imediatas.
 - ❌ **NÃO depende de bancos ou tabelas externas:** Proibição absoluta de utilizar `call_history` ou qualquer estrutura de banco externa ao `dialer_db`.
 
 ---
@@ -72,8 +72,8 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
     - Chamadas atendidas sem operador ou sala disponível em até 2 segundos são desligadas com motivo regulatório (`ABANDONED`) e registradas em auditoria.
 11. **Rastreabilidade Ponta a Ponta com CorrelationID:**
     - Toda chamada recebe um `correlation_id` único propagado até a tabela `execution_traces`, permitindo auditoria ponta a ponta e detecção de quebra de processo.
-12. **Soberania Absoluta de CDRs e Gravações de Áudio:**
-    - Toda chamada, metadados de tarifação, desfechos e os links de áudio gravado (`recording_file` e `recording_url`) residem nativamente na tabela `cdrs` do `dialer_db` e são consultados via `GET /api/v1/cdrs` e `GET /api/v1/cdrs/{id}`.
+12. **Soberania Absoluta de CDRs, Transcrições e Gravações de Áudio:**
+    - Toda chamada, metadados de tarifação, desfechos, transcrições em tempo real (`transcription`) e os links de áudio gravado (`recording_file` e `recording_url`) residem nativamente na tabela `cdrs` do `dialer_db` e são consultados via `GET /api/v1/cdrs` (com suporte a busca textual por `q` / `search`) e `GET /api/v1/cdrs/{id}`.
 
 ---
 
@@ -194,7 +194,7 @@ flowchart TD
 4. **Decisão de Roteamento:** Se encontrado retorno, comuta para a rota SIP prévia do cliente; caso contrário, direciona para o tronco receptivo padrão.
 5. **Comutação Asterisk:** AMI despacha `Redirect` para o contexto `cos-inbound` com entrega sem fila residual.
 
-### 6.4. Rota Canônica de Consulta e Áudios (`GET /api/v1/cdrs` e `GET /api/v1/cdrs/{id}`)
-1. **Entrada HTTP:** Requisição validada com suporte a filtros (`tenant_id`, `call_type`, `disposition`, `phone`, `date_start`, `date_end`, paginação `page`, `page_size`).
-2. **Consulta Relacional Soberana:** `ReportRepo.ListCDRs` consulta diretamente o banco relacional isolado `dialer_db`.
-3. **Retorno Enriquecido:** Entrega dados de tarifação, durações (`duration`, `billsec`), status, e os links completos para reprodução de áudio (`recording_file`, `recording_url`).
+### 6.4. Rota Canônica de Consulta, Transcrições e Áudios (`GET /api/v1/cdrs` e `GET /api/v1/cdrs/{id}`)
+1. **Entrada HTTP:** Requisição validada com suporte a filtros (`tenant_id`, `call_type`, `disposition`, `phone`, `date_start`, `date_end`, busca textual `q` / `search`, paginação `page`, `page_size`).
+2. **Consulta Relacional Soberana:** `ReportRepo.ListCDRs` consulta diretamente o banco relacional isolado `dialer_db` aplicando busca textual indexada com GIN em `transcription`.
+3. **Retorno Enriquecido:** Entrega dados de tarifação, durações (`duration`, `billsec`), status, transcrição textual de voz (`transcription`), e os links completos para reprodução de áudio (`recording_file`, `recording_url`).

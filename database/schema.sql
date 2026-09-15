@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS cdrs (
     trunk_used VARCHAR(64) NOT NULL,
     recording_file VARCHAR(512),
     recording_url VARCHAR(512),
+    transcription TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     initiated_at TIMESTAMP WITH TIME ZONE,
     answered_at TIMESTAMP WITH TIME ZONE,
@@ -120,6 +121,10 @@ CREATE TABLE IF NOT EXISTS cdrs (
 -- Índice Composto Cobridor para o Relatório com Buffer de 15 Minutos
 CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_dates_disposition 
 ON cdrs (tenant_id, created_at, disposition, sip_status, hangup_cause);
+
+-- Índice Textual GIN para busca analítica em transcrições de voz
+CREATE INDEX IF NOT EXISTS idx_cdrs_transcription_search 
+ON cdrs USING gin (to_tsvector('portuguese', COALESCE(transcription, '')));
 
 -- ============================================================================
 -- 6. STORED PROCEDURES DE INTELIGÊNCIA PREDITIVA & TRANSAÇÕES ACID
@@ -187,7 +192,8 @@ CREATE OR REPLACE FUNCTION fn_audit_persist_predictive_result(
     p_sip_route VARCHAR(128) DEFAULT NULL,
     p_max_attempts INTEGER DEFAULT 5,
     p_recording_file VARCHAR(512) DEFAULT NULL,
-    p_recording_url VARCHAR(512) DEFAULT NULL
+    p_recording_url VARCHAR(512) DEFAULT NULL,
+    p_transcription TEXT DEFAULT NULL
 ) RETURNS JSONB AS $$
 DECLARE
     v_target_lead_id BIGINT := p_lead_id;
@@ -221,11 +227,11 @@ BEGIN
     INSERT INTO cdrs (
         id, tenant_id, campaign_id, phone, agent_id, call_type, disposition,
         sip_status, hangup_cause, duration_seconds, billsec_seconds, ring_seconds,
-        trunk_used, recording_file, recording_url, created_at, initiated_at, answered_at, ended_at
+        trunk_used, recording_file, recording_url, transcription, created_at, initiated_at, answered_at, ended_at
     ) VALUES (
         p_cdr_id, p_tenant_id, p_campaign_id, p_phone, p_agent_id, 'PREDICTIVE', p_disposition,
         p_sip_status, p_hangup_cause, p_duration_seconds, p_billsec_seconds, p_ring_seconds,
-        p_trunk_used, p_recording_file, p_recording_url, CURRENT_TIMESTAMP, 
+        p_trunk_used, p_recording_file, p_recording_url, p_transcription, CURRENT_TIMESTAMP, 
         CURRENT_TIMESTAMP - (p_duration_seconds || ' seconds')::INTERVAL,
         CASE WHEN p_billsec_seconds > 0 THEN CURRENT_TIMESTAMP - (p_billsec_seconds || ' seconds')::INTERVAL ELSE NULL END,
         CURRENT_TIMESTAMP

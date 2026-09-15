@@ -52,8 +52,8 @@ function getGitHubConfig() {
 
 function getLocalEnvConfig() {
     const config = {
-        portainerUrl: 'https://portainer.creditobr.org/api',
-        portainerKey: 'ptr_ubSfIbjJaga7zSenoBqm8mTPzWvccL/jIuWo3t9k6bQ='
+        portainerUrl: 'https://84.247.135.255:9443/api',
+        portainerKey: 'ptr_IpehOIRXktqikYl3J7xGRkQEphHYU1mRNRRftORmXE0='
     };
 
     const envPaths = [
@@ -65,8 +65,8 @@ function getLocalEnvConfig() {
     for (const envPath of envPaths) {
         if (fs.existsSync(envPath)) {
             const content = fs.readFileSync(envPath, 'utf8');
-            const urlMatch = content.match(/PORTAINER_URL_PROD\s*=\s*["']?([^"'\r\n]+)/);
-            const keyMatch = content.match(/PORTAINER_KEY_PROD\s*=\s*["']?([^"'\r\n]+)/);
+            const urlMatch = content.match(/PORTAINER_URL(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
+            const keyMatch = content.match(/PORTAINER_KEY(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
 
             if (urlMatch) config.portainerUrl = urlMatch[1].trim().replace(/\/$/, '') + '/api';
             if (keyMatch) config.portainerKey = keyMatch[1].trim();
@@ -215,9 +215,9 @@ async function main() {
     if (buildSuccess) {
         console.log('\n🐳 4. Verificando Stack no Portainer de produção...');
         const composeContent = fs.readFileSync(composePath, 'utf8');
-        const endpointId = 1;
-        const swarmId = 'w2e8eye8z0r9688wzbkubemtw';
-        const stackName = 'omni-dialer-go';
+        const endpointId = 3;
+        const swarmId = '8e1q9spcjxxfgnumvlld04eh3';
+        const stackName = 'dialer-go';
 
         const authObj = {
             username: gitConfig.owner,

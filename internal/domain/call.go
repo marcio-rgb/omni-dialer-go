@@ -42,6 +42,7 @@ type CDR struct {
 	TrunkUsed       string          `json:"trunk_used"`
 	RecordingFile   *string         `json:"recording_file,omitempty"`
 	RecordingURL    *string         `json:"recording_url,omitempty"`
+	Transcription   *string         `json:"transcription,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	InitiatedAt     *time.Time      `json:"initiated_at,omitempty"`
 	AnsweredAt      *time.Time      `json:"answered_at,omitempty"`
@@ -64,6 +65,7 @@ type ActiveChannel struct {
 	IsAnswered    bool             `json:"is_answered"`
 	Disposition   *CallDisposition `json:"disposition,omitempty"`
 	RecordingFile string           `json:"recording_file,omitempty"`
+	Transcription string           `json:"transcription,omitempty"`
 }
 
 // PhoneTrunkMapping representa o vínculo O(1) de último tronco para chamadas receptivas.
@@ -123,6 +125,7 @@ type CallEndedWebhookPayload struct {
 	StartedAt       time.Time       `json:"started_at"`
 	EndedAt         time.Time       `json:"ended_at"`
 	RecordingURL    string          `json:"recording_url,omitempty"`
+	Transcription   string          `json:"transcription,omitempty"`
 	Timestamp       int64           `json:"timestamp"`
 }
 
@@ -153,6 +156,7 @@ type CDRFilter struct {
 	CampaignID  *string
 	Phone       *string
 	Disposition *CallDisposition
+	Search      *string
 	StartDate   *time.Time
 	EndDate     *time.Time
 	Page        int

@@ -150,3 +150,50 @@ func TestLoadDynamicConfig(t *testing.T) {
 		t.Errorf("esperava 6.0, obteve %f", dur)
 	}
 }
+
+func TestClassifyCall_AloAtThreeSecondsWithContext(t *testing.T) {
+	// Cenário crítico: Cliente hesita por 2.5s e fala "alô quem fala por gentileza" aos 3s
+	sample := "alo quem fala por gentileza"
+	metrics := CallMetrics{
+		FullText:          sample,
+		SpeechDurationSec: 0.8,
+		SilenceAfterSec:   0.2, // fala recente próximo ao fim do timeout
+	}
+
+	status, reason := ClassifyCall(metrics)
+	if status != "HUMAN" {
+		t.Errorf("esperava HUMAN para cliente que falou alô aos 3s, obteve %q (%s)", status, reason)
+	}
+}
+
+func TestClassifyCall_GreetingWithNoiseWords(t *testing.T) {
+	// Se houver palavras de ruído misturadas com alô, o greeting ainda deve prevalecer
+	sample := "alo pois nao gostaria de saber do que se trata"
+	metrics := CallMetrics{
+		FullText:          sample,
+		SpeechDurationSec: 2.0,
+		SilenceAfterSec:   0.5,
+	}
+
+	status, reason := ClassifyCall(metrics)
+	if status != "HUMAN" {
+		t.Errorf("esperava HUMAN para saudação natural longa, obteve %q (%s)", status, reason)
+	}
+}
+
+func TestClassifyCall_RealVoicemailsStillDetected(t *testing.T) {
+	voicemails := []string{
+		"deixe seu recado apos o sinal",
+		"sua chamada esta sendo encaminhada para a caixa postal",
+		"o numero discado nao existe",
+		"vivo informa este numero de telefone nao pode receber chamadas",
+	}
+
+	for _, vm := range voicemails {
+		status, reason := ClassifyCall(CallMetrics{FullText: vm})
+		if status != "MACHINE" {
+			t.Errorf("esperava MACHINE para %q, obteve %q (%s)", vm, status, reason)
+		}
+	}
+}
+

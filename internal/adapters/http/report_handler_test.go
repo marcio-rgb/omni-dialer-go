@@ -46,10 +46,21 @@ func (m *mockReportRepoForTest) GetCDRByID(ctx context.Context, tenantID, cdrID 
 	return nil, fmt.Errorf("not found")
 }
 
+func (m *mockReportRepoForTest) UpdateCDRTranscription(ctx context.Context, cdrID string, transcription string) error {
+	for _, c := range m.cdrs {
+		if c.ID == cdrID {
+			c.Transcription = &transcription
+			return nil
+		}
+	}
+	return nil
+}
+
 func TestReportHandler_ListCDRs(t *testing.T) {
 	recFile := "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999999999-1.wav"
 	recURL := "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/2026/09/14/063000-PRED-11999999999-1.wav"
 
+	transcription := "alo quem fala e da central"
 	mockRepo := &mockReportRepoForTest{
 		cdrs: []*domain.CDR{
 			{
@@ -64,6 +75,7 @@ func TestReportHandler_ListCDRs(t *testing.T) {
 				TrunkUsed:       "trunk-1",
 				RecordingFile:   &recFile,
 				RecordingURL:    &recURL,
+				Transcription:   &transcription,
 				CreatedAt:       time.Now(),
 			},
 		},
@@ -111,21 +123,26 @@ func TestReportHandler_ListCDRs(t *testing.T) {
 		if cdr.RecordingURL == nil || *cdr.RecordingURL != recURL {
 			t.Fatalf("recording_url incorreto: %v", cdr.RecordingURL)
 		}
+		if cdr.Transcription == nil || *cdr.Transcription != transcription {
+			t.Fatalf("transcription incorreto: %v", cdr.Transcription)
+		}
 	})
 }
 
 func TestReportHandler_GetCDR(t *testing.T) {
 	recURL := "https://api-omnichat.creditobr.org/dialer-go/api/v1/recordings/test.wav"
+	transText := "ola tudo bem"
 	mockRepo := &mockReportRepoForTest{
 		cdrs: []*domain.CDR{
 			{
-				ID:           "cdr-abc",
-				TenantID:     "tenant-b",
-				Phone:        "11988888888",
-				CallType:     domain.CallTypeManual,
-				Disposition:  domain.DispositionAnswered,
-				RecordingURL: &recURL,
-				CreatedAt:    time.Now(),
+				ID:            "cdr-abc",
+				TenantID:      "tenant-b",
+				Phone:         "11988888888",
+				CallType:      domain.CallTypeManual,
+				Disposition:   domain.DispositionAnswered,
+				RecordingURL:  &recURL,
+				Transcription: &transText,
+				CreatedAt:     time.Now(),
 			},
 		},
 	}
@@ -169,6 +186,9 @@ func TestReportHandler_GetCDR(t *testing.T) {
 		}
 		if resp.Data.RecordingURL == nil || *resp.Data.RecordingURL != recURL {
 			t.Fatalf("recording_url incorreto: %v", resp.Data.RecordingURL)
+		}
+		if resp.Data.Transcription == nil || *resp.Data.Transcription != transText {
+			t.Fatalf("transcription incorreto: %v", resp.Data.Transcription)
 		}
 	})
 }

@@ -12,6 +12,8 @@ O desenvolvimento, manutenção e operação do **Dialer-Go** (`go 1.25.0`) é r
    - Focado em infraestrutura telefônica Asterisk, sintaxe de dialplan (`extensions.conf`), triagem ultrarrápida de atendimento humano (< 1,5s), AMD nativo (`app_amd`), reconhecimento de voz com Vosk STT via EAGI em Go, roteamento PJSIP, pre-dial handlers e codecs.
 4. 👉 [`.agents/workflows/agente-tester-dialer.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-tester-dialer.md): **Agente Tester Dialer & Validação Ponta a Ponta (SIP Transit & N10/N11 Integration).**
    - Focado em garantia de Zero Normalização no Dialer-Go, testes automatizados de discagem multiformato (`10`, `11`, `12`, `13`, `14` dígitos), contrato de pre-dial LiveKit e conformidade técnica ([`validacao-dialer-n10.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/validacao-dialer-n10.md)).
+5. 👉 [`.agents/workflows/agente-especialista-sst.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/agente-especialista-sst.md): **Agente Especialista STT (Speech-to-Text, Vosk, Whisper & Voice AI Specialist).**
+   - Focado em motores de transcrição de voz em tempo real (Vosk Kaldi, Whisper, VAD, Piper TTS), streaming de PCM linear 8kHz via EAGI FD 3, emissão de transcrições parciais/completas via AMI VarSet/UserEvent e persistência contínua na tabela `cdrs` para análises.
 
 ---
 
