@@ -61,7 +61,7 @@ func (r *TrunkRepo) GetByID(ctx context.Context, tenantID, trunkID string) (*dom
 		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled,
 		       created_at, updated_at
 		FROM trunks
-		WHERE id = $1 AND tenant_id = $2
+		WHERE id = $1 AND (tenant_id = $2 OR tenant_id = 'default')
 	`
 
 	var t domain.Trunk
@@ -96,7 +96,7 @@ func (r *TrunkRepo) ListByTenant(ctx context.Context, tenantID string) ([]*domai
 		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled,
 		       created_at, updated_at
 		FROM trunks
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 OR tenant_id = 'default'
 		ORDER BY created_at DESC
 	`
 

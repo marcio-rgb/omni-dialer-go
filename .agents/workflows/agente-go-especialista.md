@@ -128,6 +128,7 @@ graph TD
 | `Originate` | `Originate(ctx context.Context, actionID, channel, context, exten string, priority int, timeout int, callerID, account string, variables map[string]string) error` | Dispara chamada de saída via Asterisk AMI. |
 | `Redirect` | `Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error` | Transfere perna telefônica para sala de conferência ou ramal. |
 | `Hangup` | `Hangup(ctx context.Context, actionID, channel string, cause int) error` | Derruba canal telefônico especificando a causa Q.850. |
+| `SetVar` | `SetVar(ctx context.Context, actionID, channel, variable, value string) error` | Define variável de canal no Asterisk de forma atômica via AMI. |
 | `Command` | `Command(ctx context.Context, actionID, command string) (string, error)` | Executa comando CLI no Asterisk (`pjsip reload`, `dialplan reload`). |
 | `SubscribeEvents` | `SubscribeEvents() <-chan AMIEvent` | Retorna canal unidirecional com stream assíncrono de eventos AMI. |
 
