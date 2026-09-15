@@ -63,6 +63,7 @@ func main() {
 	leadRepo := postgres.NewLeadRepo(pgPool)
 	campaignRepo := postgres.NewCampaignRepo(pgPool)
 	reportRepo := postgres.NewReportRepo(pgPool)
+	sipConfigRepo := postgres.NewSIPConfigRepo(pgPool)
 	storageAdapter := storage.NewStorageAdapter(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
 
 	// 6. Core Engines & Arbitragem
@@ -99,10 +100,14 @@ func main() {
 		mailingProcessor.SetAudioWordManager(audioWordMgr)
 	}
 
-	// 8. Gestão Dinâmica de AMD & Reconhecimento de Voz
+	// 8. Gestão Dinâmica de AMD, Configurações Asterisk (sip_data) & Reconhecimento de Voz
 	amdConfigMgr := core.NewAMDConfigManager("./storage", "")
 	amdHandler := httpAdapter.NewAMDHandler(amdConfigMgr, amiClient)
 	leadBatchHandler := httpAdapter.NewLeadBatchHandler(leadRepo, cache, audioWordMgr)
+
+	sipConfigMgr := core.NewSIPConfigManager(sipConfigRepo, "")
+	sipConfigMgr.SeedFromDiskIfEmpty(ctx)
+	sipConfigHandler := httpAdapter.NewSIPConfigHandler(sipConfigMgr, amiClient)
 
 	// 9. Middlewares & Handlers HTTP
 	whitelist := httpAdapter.NewIPWhitelistMiddleware(cfg.InitialWhitelistIPs)
@@ -121,6 +126,7 @@ func main() {
 		Audio:               audioHandler,
 		AMD:                 amdHandler,
 		LeadBatch:           leadBatchHandler,
+		SIPConfig:           sipConfigHandler,
 	}
 
 	server := httpAdapter.NewServer(cfg.AppPort, handlersConfig)

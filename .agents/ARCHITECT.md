@@ -89,6 +89,7 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
 | **Resiliência de Rede** | **Circuit Breaker / Retry Backoff** | Conexões com PostgreSQL e AMI implementam retentativas com backoff exponencial para absorver reinicializações de infraestrutura sem panics. | `internal/adapters/{ami, postgres}` |
 | **Atomicidade de Mailing** | **Transactional Outbox / Stored Procedures ACID** | Stored procedures PostgreSQL (`fn_audit_claim_predictive_batch`, `fn_audit_persist_predictive_result`) garantem consistência transacional sob concorrência massiva. | `database/schema.sql` |
 | **Notificação de Desfecho** | **Adapter & Observer Pattern** | Despacha eventos assíncronos de término e falha de chamada via Webhook HTTP com timeout estrito de 5s para o upstream. | `internal/core/call_notifier.go` |
+| **Gestão de Configuração Asterisk** | **Configuration Manager / Repository** | Gerencia arquivos de configuração (`pjsip.conf`, `extensions.conf`) via tabela `sip_data`, sincronizando com disco e enviando reloads via AMI. | `internal/core/sip_config_manager.go` |
 
 ---
 

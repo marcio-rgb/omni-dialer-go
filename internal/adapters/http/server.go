@@ -30,6 +30,7 @@ type HandlersConfig struct {
 	Audio               *AudioWordsHandler
 	AMD                 *AMDHandler
 	LeadBatch           *LeadBatchHandler
+	SIPConfig           *SIPConfigHandler
 }
 
 func NewServer(port int, handlers HandlersConfig) *Server {
@@ -118,6 +119,20 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 					amd.Put("/config", handlers.AMD.UpdateConfig)
 					amd.Post("/config", handlers.AMD.UpdateConfig)
 					amd.Post("/reload", handlers.AMD.Reload)
+				})
+			}
+
+			// 8. Gestão Dinâmica de Arquivos de Configuração Asterisk via sip_data
+			if handlers.SIPConfig != nil {
+				api.Route("/configs", func(cfg chi.Router) {
+					cfg.Get("/", handlers.SIPConfig.List)
+					cfg.Get("/domains", handlers.SIPConfig.GetDomains)
+					cfg.Post("/apply", handlers.SIPConfig.Apply)
+					cfg.Post("/", handlers.SIPConfig.Save)
+					cfg.Get("/{file}", handlers.SIPConfig.Get)
+					cfg.Put("/{file}", handlers.SIPConfig.Save)
+					cfg.Post("/{file}", handlers.SIPConfig.Save)
+					cfg.Delete("/{file}", handlers.SIPConfig.Delete)
 				})
 			}
 		})

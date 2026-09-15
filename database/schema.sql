@@ -360,4 +360,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 8. Tabela de Arquivos de Configuração Asterisk (sip_data)
+CREATE TABLE IF NOT EXISTS sip_data (
+    file VARCHAR(60) PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+
 

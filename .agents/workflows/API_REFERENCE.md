@@ -81,6 +81,12 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `PUT` | `/api/v1/amd/config` | Atualiza parâmetros AMD em disco/memória e hot-reload | Whitelist + JSON Body |
 | `POST` | `/api/v1/amd/config` | Atualiza parâmetros AMD em disco/memória (alias POST) | Whitelist + JSON Body |
 | `POST` | `/api/v1/amd/reload` | Força recarga do módulo `app_amd.so` no Asterisk via AMI | Whitelist + JSON |
+| `GET` | `/api/v1/configs` | Lista todos os arquivos de configuração armazenados na tabela `sip_data` | Whitelist |
+| `GET` | `/api/v1/configs/{file}` | Obtém o conteúdo e metadados de um arquivo `.conf` em `sip_data` | Whitelist |
+| `POST` | `/api/v1/configs` | Salva um arquivo de configuração na tabela `sip_data` (opcional `?apply=true`) | Whitelist + JSON Body |
+| `PUT` | `/api/v1/configs/{file}` | Atualiza o conteúdo de um arquivo `.conf` na tabela `sip_data` | Whitelist + JSON Body |
+| `POST` | `/api/v1/configs/apply` | Aplica os arquivos de `sip_data` em disco (`/etc/asterisk`) e recarrega via AMI | Whitelist + JSON Body |
+| `DELETE`| `/api/v1/configs/{file}` | Remove um arquivo de configuração da tabela `sip_data` | Whitelist |
 
 ---
 
