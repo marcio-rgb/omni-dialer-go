@@ -18,6 +18,7 @@ type AMIPort interface {
 	Originate(ctx context.Context, actionID, channel, context, exten string, priority int, timeout int, callerID, account string, variables map[string]string) error
 	Redirect(ctx context.Context, actionID, channel, extraChannel, context, exten string, priority int) error
 	Hangup(ctx context.Context, actionID, channel string, cause int) error
+	SetVar(ctx context.Context, actionID, channel, variable, value string) error
 	Command(ctx context.Context, actionID, command string) (string, error)
 	
 	// Stream de Eventos

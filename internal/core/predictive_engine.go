@@ -364,8 +364,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	}
 
 	// 4. Define a variável AGENT_ROOM no canal do Asterisk
-	setVarCmd := fmt.Sprintf("dialplan set chanvar %s AGENT_ROOM %s", channel, roomName)
-	_, _ = pe.ami.Command(ctx, fmt.Sprintf("setvar-%s", actionID), setVarCmd)
+	_ = pe.ami.SetVar(ctx, fmt.Sprintf("setvar-%s", actionID), channel, "AGENT_ROOM", roomName)
 
 	// 5. Redireciona o canal do cliente para o contexto cos-all-custom exten 9999 (Dial LiveKit SIP)
 	return pe.ami.Redirect(ctx, actionID, channel, "", "cos-all-custom", "9999", 1)
@@ -382,8 +381,7 @@ func (pe *PredictiveEngine) HandlePredictiveAi(ctx context.Context, channel, uni
 	cleanPhone := strings.ReplaceAll(strings.ReplaceAll(phone, "+", ""), " ", "")
 	roomName := fmt.Sprintf("sala_agente_%s_%s", campaignID, cleanPhone)
 
-	setVarCmd := fmt.Sprintf("dialplan set chanvar %s AGENT_ROOM %s", channel, roomName)
-	_, _ = pe.ami.Command(ctx, fmt.Sprintf("setvar-%s", actionID), setVarCmd)
+	_ = pe.ami.SetVar(ctx, fmt.Sprintf("setvar-%s", actionID), channel, "AGENT_ROOM", roomName)
 
 	return pe.ami.Redirect(ctx, actionID, channel, "", "cos-all-custom", "9999", 1)
 }

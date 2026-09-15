@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -73,14 +74,18 @@ type Trunk struct {
 	UpdatedAt        time.Time        `json:"updated_at"`
 }
 
-// DialString gera a string de canal Asterisk considerando ou não o tech_prefix.
+// DialString gera a string de canal Asterisk considerando ou não o tech_prefix e a porta.
 func (t *Trunk) DialString(destinationPhone string) string {
 	phone := destinationPhone
 	if t.TechPrefix != nil && *t.TechPrefix != "" {
 		phone = fmt.Sprintf("%s%s", *t.TechPrefix, destinationPhone)
 	}
 	if t.Host != "" {
-		return fmt.Sprintf("PJSIP/%s/sip:%s@%s", t.ID, phone, t.Host)
+		hostPort := t.Host
+		if t.Port > 0 && t.Port != 5060 && !strings.Contains(t.Host, ":") {
+			hostPort = fmt.Sprintf("%s:%d", t.Host, t.Port)
+		}
+		return fmt.Sprintf("PJSIP/%s/sip:%s@%s", t.ID, phone, hostPort)
 	}
 	return fmt.Sprintf("PJSIP/%s@%s", phone, t.ID)
 }

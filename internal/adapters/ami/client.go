@@ -326,6 +326,30 @@ func (c *AMIClient) Hangup(ctx context.Context, actionID, channel string, cause 
 	}
 }
 
+func (c *AMIClient) SetVar(ctx context.Context, actionID, channel, variable, value string) error {
+	payload := fmt.Sprintf("Action: Setvar\r\nActionID: %s\r\nChannel: %s\r\nVariable: %s\r\nValue: %s\r\n\r\n",
+		actionID, channel, variable, value)
+
+	ch := c.registerAction(actionID)
+	defer c.unregisterAction(actionID)
+
+	if err := c.writeRaw(payload); err != nil {
+		return err
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case resp := <-ch:
+		if resp.Attributes["Response"] != "Success" {
+			return fmt.Errorf("erro no Setvar: %s", resp.Attributes["Message"])
+		}
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("timeout aguardando confirmação de Setvar")
+	}
+}
+
 func (c *AMIClient) Command(ctx context.Context, actionID, command string) (string, error) {
 	payload := fmt.Sprintf("Action: Command\r\nActionID: %s\r\nCommand: %s\r\n\r\n",
 		actionID, command)

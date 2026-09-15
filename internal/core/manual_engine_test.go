@@ -37,6 +37,9 @@ func (m *mockAMI) Redirect(ctx context.Context, actionID, channel, extraChannel,
 func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }
+func (m *mockAMI) SetVar(ctx context.Context, actionID, channel, variable, value string) error {
+	return nil
+}
 func (m *mockAMI) Command(ctx context.Context, actionID, command string) (string, error) {
 	return "", nil
 }

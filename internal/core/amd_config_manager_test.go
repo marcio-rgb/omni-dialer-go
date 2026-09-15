@@ -28,6 +28,9 @@ func (m *mockAMIForReload) Redirect(ctx context.Context, actionID, channel, extr
 func (m *mockAMIForReload) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }
+func (m *mockAMIForReload) SetVar(ctx context.Context, actionID, channel, variable, value string) error {
+	return nil
+}
 func (m *mockAMIForReload) Command(ctx context.Context, actionID, command string) (string, error) {
 	m.lastCommand = command
 	return "Module 'app_amd.so' reloaded successfully.", nil
