@@ -23,6 +23,8 @@ type PredictiveEngine struct {
 	campaigns           ports.CampaignRepository
 	trunks              ports.TrunkRepository
 	leads               ports.LeadRepository
+	tenants             ports.TenantRepository
+	webhookClient       ports.WebhookPort
 	roundRobinIdx       uint64
 	minChannelsPerAgent atomic.Int32
 }
@@ -38,6 +40,14 @@ func NewPredictiveEngine(ami ports.AMIPort, channels *ChannelManager, cache port
 	}
 	pe.minChannelsPerAgent.Store(2)
 	return pe
+}
+
+func (pe *PredictiveEngine) SetTenantRepository(tenants ports.TenantRepository) {
+	pe.tenants = tenants
+}
+
+func (pe *PredictiveEngine) SetWebhookClient(webhookClient ports.WebhookPort) {
+	pe.webhookClient = webhookClient
 }
 
 // SetMinChannelsPerAgent configura o piso de canais simultâneos originados por usuário disponível de forma thread-safe.
@@ -254,6 +264,11 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			TenantID:   req.TenantID,
 			CampaignID: &req.CampaignID,
 			Phone:      phone,
+			CPF:        leadItem.CPF,
+			Name:       leadItem.Name,
+			Att1:       leadItem.Att1,
+			Att2:       leadItem.Att2,
+			Att3:       leadItem.Att3,
 			CallType:   domain.CallTypePredictive,
 			StartedAt:  time.Now(),
 			IsAnswered: false,
@@ -353,8 +368,10 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	// 1. Busca o próximo operador disponível na fila da campanha
 	agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
 	roomName := fmt.Sprintf("sala_campanha_%s", campaignID)
+	userID := roomName
 
 	if err == nil && agent != nil && agent.AgentID != "" {
+		userID = agent.AgentID
 		roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
 		if callID != "" {
 			pe.channels.AssignAgent(callID, agent.AgentID)
@@ -363,11 +380,60 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 		log.Printf("[PREDICTIVE-HUMAN] Nenhum agent_id individual na fila Redis para campanha %s. Utilizando sala fallback '%s'", campaignID, roomName)
 	}
 
+	// 2. Disparo assíncrono do webhook inject-lead (sem travar a telefonia)
+	if pe.webhookClient != nil {
+		go pe.dispatchInjectLeadWebhook(callID, userID, phone, campaignID)
+	}
+
 	// 4. Define a variável AGENT_ROOM no canal do Asterisk
 	_ = pe.ami.SetVar(ctx, fmt.Sprintf("setvar-%s", actionID), channel, "AGENT_ROOM", roomName)
 
 	// 5. Redireciona o canal do cliente para o contexto cos-all-custom exten 9999 (Dial LiveKit SIP)
 	return pe.ami.Redirect(ctx, actionID, channel, "", "cos-all-custom", "9999", 1)
+}
+
+func (pe *PredictiveEngine) dispatchInjectLeadWebhook(callID, userID, phone, campaignID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tenantID := "default"
+	var cpf, name, att1, att2, att3 string
+
+	if callID != "" {
+		activeChan := pe.channels.GetActiveChannel(callID)
+		if activeChan != nil {
+			if activeChan.TenantID != "" {
+				tenantID = activeChan.TenantID
+			}
+			cpf = activeChan.CPF
+			name = activeChan.Name
+			att1 = activeChan.Att1
+			att2 = activeChan.Att2
+			att3 = activeChan.Att3
+		}
+	}
+
+	var webhookURL string
+	if pe.tenants != nil {
+		tenant, err := pe.tenants.GetByID(ctx, tenantID)
+		if err == nil && tenant != nil {
+			webhookURL = tenant.Webhook
+		}
+	}
+
+	params := &domain.InjectLeadParams{
+		UserID: userID,
+		CPF:    cpf,
+		Name:   name,
+		Phone:  phone,
+		Att1:   att1,
+		Att2:   att2,
+		Att3:   att3,
+	}
+
+	if pe.webhookClient != nil {
+		_ = pe.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
+	}
 }
 
 // HandlePredictiveAi é acionado quando o Asterisk detecta atendimento de IA (UserEvent PredictiveAi)

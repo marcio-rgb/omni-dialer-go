@@ -48,3 +48,10 @@ type ReportRepository interface {
 	ListCDRs(ctx context.Context, filter domain.CDRFilter) (*domain.CDRListResponse, error)
 	GetCDRByID(ctx context.Context, tenantID, cdrID string) (*domain.CDR, error)
 }
+
+type TenantRepository interface {
+	GetByID(ctx context.Context, tenantID string) (*domain.Tenant, error)
+	Save(ctx context.Context, tenant *domain.Tenant) error
+	ListAll(ctx context.Context) ([]*domain.Tenant, error)
+}
+

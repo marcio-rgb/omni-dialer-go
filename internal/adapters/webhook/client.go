@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"dialer-go/internal/domain"
@@ -84,5 +85,56 @@ func (c *WebhookClient) NotifyCallEnded(ctx context.Context, webhookURL string, 
 	}
 
 	log.Printf("[INFO] [WEBHOOK] Chamada %s (Disposition: %s) notificada com sucesso para %s (HTTP %d)", payload.CallID, payload.Disposition, targetURL, resp.StatusCode)
+	return nil
+}
+
+// NotifyInjectLead dispara a requisição HTTP GET assíncrona para o tenant informando o atendimento do lead.
+// GET /api/v1/telephony/webhook/inject-lead?user_id=...&cpf=...&name=...&phone=...&att1=...&att2=...&att3=...
+func (c *WebhookClient) NotifyInjectLead(ctx context.Context, webhookURL string, params *domain.InjectLeadParams) error {
+	targetURL := webhookURL
+	if targetURL == "" {
+		targetURL = c.defaultURL
+	}
+	if targetURL == "" {
+		return nil
+	}
+
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		log.Printf("[WARN] [WEBHOOK-INJECT-LEAD] URL de webhook inválida '%s': %v", targetURL, err)
+		return err
+	}
+
+	q := parsedURL.Query()
+	q.Set("user_id", params.UserID)
+	q.Set("cpf", params.CPF)
+	q.Set("name", params.Name)
+	q.Set("phone", params.Phone)
+	q.Set("att1", params.Att1)
+	q.Set("att2", params.Att2)
+	q.Set("att3", params.Att3)
+	parsedURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("falha ao montar requisição GET inject-lead: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "DialerGo-LeadInjector/1.0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[WARN] [WEBHOOK-INJECT-LEAD] Falha ao enviar GET %s: %v", parsedURL.String(), err)
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("[WARN] [WEBHOOK-INJECT-LEAD] GET %s retornou HTTP %d", parsedURL.String(), resp.StatusCode)
+		return fmt.Errorf("webhook inject-lead retornou status HTTP %d", resp.StatusCode)
+	}
+
+	log.Printf("[INFO] [WEBHOOK-INJECT-LEAD] Lead injetado com sucesso via GET para %s (HTTP %d)", parsedURL.String(), resp.StatusCode)
 	return nil
 }

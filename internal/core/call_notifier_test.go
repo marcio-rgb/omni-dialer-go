@@ -23,6 +23,10 @@ func (m *mockWebhookPort) NotifyCallEnded(ctx context.Context, webhookURL string
 	return nil
 }
 
+func (m *mockWebhookPort) NotifyInjectLead(ctx context.Context, webhookURL string, params *domain.InjectLeadParams) error {
+	return nil
+}
+
 func TestResolveHangupReason(t *testing.T) {
 	tests := []struct {
 		disposition domain.CallDisposition

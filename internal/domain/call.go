@@ -55,8 +55,13 @@ type ActiveChannel struct {
 	TrunkID     string           `json:"trunk_id"`
 	TenantID    string           `json:"tenant_id"`
 	CampaignID  *string          `json:"campaign_id,omitempty"`
-	Phone       string           `json:"phone"`
-	CallType    CallType         `json:"call_type"`
+	Phone         string           `json:"phone"`
+	CPF           string           `json:"cpf,omitempty"`
+	Name          string           `json:"name,omitempty"`
+	Att1          string           `json:"att1,omitempty"`
+	Att2          string           `json:"att2,omitempty"`
+	Att3          string           `json:"att3,omitempty"`
+	CallType      CallType         `json:"call_type"`
 	AgentID     *string          `json:"agent_id,omitempty"`
 	SIPRoute    *string          `json:"sip_route,omitempty"`
 	WebhookURL  *string          `json:"webhook_url,omitempty"`
@@ -97,6 +102,9 @@ type LeadQueueItem struct {
 	Name      string `json:"name,omitempty"`
 	FirstName string `json:"first_name,omitempty"`
 	WorkWord  string `json:"work_word,omitempty"`
+	Att1      string `json:"att1,omitempty"`
+	Att2      string `json:"att2,omitempty"`
+	Att3      string `json:"att3,omitempty"`
 	LeadID    int64  `json:"lead_id,omitempty"`
 }
 

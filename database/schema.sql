@@ -89,10 +89,28 @@ CREATE TABLE IF NOT EXISTS leads (
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS name VARCHAR(255);
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_name VARCHAR(64);
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS work_word VARCHAR(64);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS att1 VARCHAR(255);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS att2 VARCHAR(255);
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS att3 VARCHAR(255);
 
 CREATE INDEX IF NOT EXISTS idx_leads_campaign_filo ON leads(campaign_id, status, last_dialed_at, id DESC);
 CREATE INDEX IF NOT EXISTS idx_leads_tenant ON leads(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_leads_first_name ON leads(first_name);
+
+-- 4.1. Tabela de Tenants (Organizações Contratantes)
+CREATE TABLE IF NOT EXISTS tenants (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    webhook VARCHAR(512),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO tenants (id, name, webhook)
+VALUES 
+    ('default', 'Default Tenant', 'http://37.60.228.113:3000/api/v1/telephony/webhook/inject-lead'),
+    ('cbr', 'Credito BR', 'http://37.60.228.113:3000/api/v1/telephony/webhook/inject-lead')
+ON CONFLICT (id) DO NOTHING;
 
 -- 5. Tabela de CDRs (Call Detail Records)
 CREATE TABLE IF NOT EXISTS cdrs (

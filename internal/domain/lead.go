@@ -20,6 +20,9 @@ type Lead struct {
 	Name          string     `json:"name,omitempty"`
 	FirstName     string     `json:"first_name,omitempty"`
 	WorkWord      string     `json:"work_word,omitempty"`
+	Att1          string     `json:"att1,omitempty"`
+	Att2          string     `json:"att2,omitempty"`
+	Att3          string     `json:"att3,omitempty"`
 	Status        LeadStatus `json:"status"`
 	AttemptsCount int        `json:"attempts_count"`
 	LastDialedAt  *time.Time `json:"last_dialed_at,omitempty"`
@@ -51,6 +54,9 @@ type BatchLeadItem struct {
 	Name      string `json:"name,omitempty"`
 	FirstName string `json:"first_name,omitempty"`
 	WorkWord  string `json:"work_word,omitempty"`
+	Att1      string `json:"att1,omitempty"`
+	Att2      string `json:"att2,omitempty"`
+	Att3      string `json:"att3,omitempty"`
 	AudioKey  string `json:"audio_key,omitempty"`
 }
 

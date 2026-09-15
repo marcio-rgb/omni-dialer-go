@@ -64,6 +64,7 @@ func main() {
 	campaignRepo := postgres.NewCampaignRepo(pgPool)
 	reportRepo := postgres.NewReportRepo(pgPool)
 	sipConfigRepo := postgres.NewSIPConfigRepo(pgPool)
+	tenantRepo := postgres.NewTenantRepo(pgPool)
 	storageAdapter := storage.NewStorageAdapter(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
 
 	// 6. Core Engines & Arbitragem
@@ -75,11 +76,15 @@ func main() {
 	inboundEngine := core.NewInboundEngine(amiClient, routingRepo, channelMgr, "from-internal", "s")
 	predictiveEngine := core.NewPredictiveEngine(amiClient, channelMgr, cache, campaignRepo, trunkRepo, leadRepo)
 	predictiveEngine.SetMinChannelsPerAgent(cfg.MinChannelsPerAgent)
+	predictiveEngine.SetTenantRepository(tenantRepo)
+	predictiveEngine.SetWebhookClient(webhookAdapter)
 	trunkMgr.SetEngines(predictiveEngine, inboundEngine)
 	trunkMgr.SetNotifier(callNotifier)
 	trunkMgr.StartDaemon(ctx)
 	defer trunkMgr.Stop()
 	manualEngine := core.NewManualEngine(amiClient, channelMgr, trunkRepo, cache)
+	manualEngine.SetTenantRepository(tenantRepo)
+	manualEngine.SetWebhookClient(webhookAdapter)
 	mailingProcessor := core.NewMailingProcessor(storageAdapter, leadRepo, cache)
 	saturationService := core.NewSaturationService(leadRepo, campaignRepo)
 

@@ -31,6 +31,9 @@ func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause in
 func (m *mockAMI) Command(ctx context.Context, actionID, command string) (string, error) {
 	return "Output: module reloaded", nil
 }
+func (m *mockAMI) SetVar(ctx context.Context, actionID, channel, variable, value string) error {
+	return nil
+}
 func (m *mockAMI) SubscribeEvents() <-chan ports.AMIEvent {
 	return make(chan ports.AMIEvent)
 }

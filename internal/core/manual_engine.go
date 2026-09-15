@@ -17,6 +17,8 @@ type ManualEngine struct {
 	channels      *ChannelManager
 	trunks        ports.TrunkRepository
 	cache         ports.CachePort
+	tenants       ports.TenantRepository
+	webhookClient ports.WebhookPort
 	roundRobinIdx uint64
 }
 
@@ -27,6 +29,14 @@ func NewManualEngine(ami ports.AMIPort, channels *ChannelManager, trunks ports.T
 		trunks:   trunks,
 		cache:    cache,
 	}
+}
+
+func (me *ManualEngine) SetTenantRepository(tenants ports.TenantRepository) {
+	me.tenants = tenants
+}
+
+func (me *ManualEngine) SetWebhookClient(webhookClient ports.WebhookPort) {
+	me.webhookClient = webhookClient
 }
 
 // DialManual dispara chamada manual prioritária.
@@ -215,9 +225,37 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		return nil, domain.NewErrInternal(fmt.Sprintf("Falha ao originar chamada manual no PBX: %s", err.Error()))
 	}
 
+	if me.webhookClient != nil {
+		go me.dispatchInjectLeadWebhook(req.TenantID, req.AgentID, destPhone, leadCPF, leadName)
+	}
+
 	return &domain.ManualCallResponse{
 		CallID:    callID,
 		Status:    "dialing",
 		TrunkUsed: trunkID,
 	}, nil
+}
+
+func (me *ManualEngine) dispatchInjectLeadWebhook(tenantID, userID, phone, cpf, name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var webhookURL string
+	if me.tenants != nil {
+		tenant, err := me.tenants.GetByID(ctx, tenantID)
+		if err == nil && tenant != nil {
+			webhookURL = tenant.Webhook
+		}
+	}
+
+	params := &domain.InjectLeadParams{
+		UserID: userID,
+		CPF:    cpf,
+		Name:   name,
+		Phone:  phone,
+	}
+
+	if me.webhookClient != nil {
+		_ = me.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
+	}
 }

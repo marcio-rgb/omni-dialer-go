@@ -12,14 +12,8 @@ import (
 // @governedBy docs/rules/TELEPHONY_POLICIES.md#3-notificacoes-assincronas-e-webhooks
 type WebhookPort interface {
 	// NotifyCallEnded dispara a notificação de encerramento da perna telefônica com o desfecho da operadora.
-	//
-	// @pattern Adapter (Method)
-	// @governedBy docs/rules/TELEPHONY_POLICIES.md#3-notificacoes-assincronas-e-webhooks
-	//
-	// @preExecution
-	// - Validar URL de destino não vazia e payload válido com CallID e TenantID
-	//
-	// @postExecution
-	// - Enviar requisição HTTP POST com timeout curto e headers de rastreabilidade
 	NotifyCallEnded(ctx context.Context, webhookURL string, payload *domain.CallEndedWebhookPayload) error
+
+	// NotifyInjectLead dispara o webhook GET assíncrono para o tenant ao conectar a chamada com os dados do lead.
+	NotifyInjectLead(ctx context.Context, webhookURL string, params *domain.InjectLeadParams) error
 }
