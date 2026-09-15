@@ -40,12 +40,14 @@ func main() {
 	defer pgPool.Close()
 	log.Println("[INFO] PostgreSQL dialer_db conectado.")
 
-	// 3. Conecta ao Redis
+	// 3. Conecta ao Redis e ativa escuta de mortes silenciosas (expirações de heartbeat)
 	cache, err := redisAdapter.NewRedisAdapter(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	if err != nil {
 		log.Fatalf("[FATAL] Redis indisponível no boot: %v", err)
 	}
-	log.Println("[INFO] Redis conectado.")
+	cache.StartKeyspaceListener(ctx, cfg.RedisDB)
+	log.Println("[INFO] Redis conectado e Keyspace Listener (Ex) ativado.")
+
 
 	// 4. Conecta ao Asterisk PBX (AMI TCP Socket)
 	amiClient := ami.NewAMIClient(cfg.AsteriskAMIHost, cfg.AsteriskAMIPort, cfg.AsteriskAMIUser, cfg.AsteriskAMIPass)

@@ -76,6 +76,10 @@ func (m *mockCachePredictive) PopIdleAgent(ctx context.Context, timeout time.Dur
 func (m *mockCachePredictive) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error {
 	return nil
 }
+func (m *mockCachePredictive) RemoveAgentFromQueues(ctx context.Context, agentID string) error {
+	return nil
+}
+
 
 
 func TestPredictiveEngine_RandomizeCallerID_ZeroNormalization(t *testing.T) {

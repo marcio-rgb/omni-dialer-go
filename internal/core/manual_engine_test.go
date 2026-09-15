@@ -126,6 +126,10 @@ func (m *mockCache) PopIdleAgent(ctx context.Context, timeout time.Duration) (*d
 func (m *mockCache) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error {
 	return nil
 }
+func (m *mockCache) RemoveAgentFromQueues(ctx context.Context, agentID string) error {
+	return nil
+}
+
 
 
 func TestManualEngine_ZeroNormalization_PhoneIntegrity(t *testing.T) {

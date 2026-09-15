@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
 	"dialer-go/internal/domain"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
 
 type RedisAdapter struct {
 	client *redis.Client
@@ -275,5 +278,114 @@ func (r *RedisAdapter) PushIdleAgent(ctx context.Context, agent *domain.AgentRed
 	}
 	return r.client.RPush(ctx, key, data).Err()
 }
+
+// EnableKeyspaceNotifications ativa o envio de eventos de expiração ("Ex") no Redis
+func (r *RedisAdapter) EnableKeyspaceNotifications(ctx context.Context) error {
+	err := r.client.ConfigSet(ctx, "notify-keyspace-events", "Ex").Err()
+	if err != nil {
+		return fmt.Errorf("falha ao configurar keyspace events (Ex) no Redis: %w", err)
+	}
+	log.Println("[INFO] Keyspace Notifications (Ex) ativadas com sucesso no Redis.")
+	return nil
+}
+
+// RemoveAgentFromQueues remove o agente fantasma/desconectado de todas as filas de discagem
+func (r *RedisAdapter) RemoveAgentFromQueues(ctx context.Context, agentID string) error {
+	if agentID == "" {
+		return nil
+	}
+
+	// 1. Remove da fila global de ociosos dialer:idle_agents
+	idleKey := "dialer:idle_agents"
+	items, err := r.client.LRange(ctx, idleKey, 0, -1).Result()
+	if err == nil {
+		for _, item := range items {
+			if strings.Contains(item, fmt.Sprintf(`"agent_id":"%s"`, agentID)) || item == agentID {
+				_ = r.client.LRem(ctx, idleKey, 0, item).Err()
+			}
+		}
+	}
+
+	// 2. Remove da fila por campanha dialer:available_agents:*
+	iter := r.client.Scan(ctx, 0, "dialer:available_agents:*", 100).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val()
+		val, err := r.client.Get(ctx, key).Result()
+		if err == nil && val != "" {
+			var agents []domain.AgentDemandDTO
+			if err := json.Unmarshal([]byte(val), &agents); err == nil {
+				var filtered []domain.AgentDemandDTO
+				changed := false
+				for _, a := range agents {
+					if a.AgentID == agentID {
+						changed = true
+					} else {
+						filtered = append(filtered, a)
+					}
+				}
+				if changed {
+					if len(filtered) > 0 {
+						bytes, _ := json.Marshal(filtered)
+						ttl, _ := r.client.TTL(ctx, key).Result()
+						if ttl > 0 {
+							_ = r.client.Set(ctx, key, bytes, ttl).Err()
+						}
+					} else {
+						_ = r.client.Del(ctx, key).Err()
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// StartKeyspaceListener escuta as notificações de expiração de chaves Redis em background
+func (r *RedisAdapter) StartKeyspaceListener(ctx context.Context, db int) {
+	if err := r.EnableKeyspaceNotifications(ctx); err != nil {
+		log.Printf("[WARN] %v", err)
+	}
+
+	go func() {
+		channelName := fmt.Sprintf("__keyevent@%d__:expired", db)
+		pubsub := r.client.Subscribe(ctx, channelName)
+		defer pubsub.Close()
+
+		log.Printf("[INFO] Escutando quedas de conexão de agentes (Expirações) no canal Redis: %s", channelName)
+		ch := pubsub.Channel()
+
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[INFO] Parando listener de expiração de agentes Redis.")
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				expiredKey := msg.Payload
+				var agentID string
+				if strings.HasPrefix(expiredKey, "agente_online:") {
+					agentID = strings.TrimPrefix(expiredKey, "agente_online:")
+				} else if strings.HasPrefix(expiredKey, "dialer:agent_online:") {
+					agentID = strings.TrimPrefix(expiredKey, "dialer:agent_online:")
+				} else if strings.HasPrefix(expiredKey, "agente:") {
+					agentID = strings.TrimPrefix(expiredKey, "agente:")
+				}
+
+				if agentID != "" {
+					log.Printf("[WARN] ALERTA: Heartbeat do Agente parou! Chave expirou: %s (agent_id: %s)", expiredKey, agentID)
+					if err := r.RemoveAgentFromQueues(ctx, agentID); err != nil {
+						log.Printf("[ERROR] Erro ao remover agente %s das filas: %v", agentID, err)
+					} else {
+						log.Printf("[INFO] Agente %s removido das filas de discagem com sucesso.", agentID)
+					}
+				}
+			}
+		}
+	}()
+}
+
 
 

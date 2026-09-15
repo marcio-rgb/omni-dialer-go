@@ -42,5 +42,7 @@ type CachePort interface {
 	GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error)
 	PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error)
 	PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error
+	RemoveAgentFromQueues(ctx context.Context, agentID string) error
 }
+
 
