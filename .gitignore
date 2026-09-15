@@ -15,8 +15,13 @@ vosk-model/
 *.swp
 *~
 
-# Environment
+# Environment & Secrets
 .env
 .env.*
 !.env.example
+*.ENV
+*.env
+.agents/*.ENV
+.agents/*.env
+.agents/servers.ENV
 bin/
