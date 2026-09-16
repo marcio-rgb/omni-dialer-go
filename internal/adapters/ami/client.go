@@ -304,31 +304,37 @@ func (c *AMIClient) Redirect(ctx context.Context, actionID, channel, extraChanne
 	}
 }
 
+func sanitizeSIPHeaderValue(val string) string {
+	clean := strings.ReplaceAll(strings.ReplaceAll(val, "\r", ""), "\n", " ")
+	clean = strings.ReplaceAll(clean, "\"", "'")
+	return strings.TrimSpace(clean)
+}
+
 // TransferToLiveKit transfere o canal do Asterisk para o LiveKit SIP via contexto cos-all-custom injetando variáveis de canal
 func (c *AMIClient) TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error {
 	actionID := fmt.Sprintf("transfer-livekit-%d", time.Now().UnixNano())
 
 	if agent != nil && agent.LiveKitRoom != "" {
-		_ = c.SetVar(ctx, fmt.Sprintf("setvar-room-%s", actionID), channel, "AGENT_ROOM", agent.LiveKitRoom)
+		_ = c.SetVar(ctx, fmt.Sprintf("setvar-room-%s", actionID), channel, "AGENT_ROOM", sanitizeSIPHeaderValue(agent.LiveKitRoom))
 	}
 	if customer != nil {
 		if customer.CustomerID != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cid-%s", actionID), channel, "CUSTOMER_ID", customer.CustomerID)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cid-%s", actionID), channel, "CUSTOMER_ID", sanitizeSIPHeaderValue(customer.CustomerID))
 		}
 		if customer.Name != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cname-%s", actionID), channel, "CUSTOMER_NAME", customer.Name)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cname-%s", actionID), channel, "CUSTOMER_NAME", sanitizeSIPHeaderValue(customer.Name))
 		}
 		if customer.Phone != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cphone-%s", actionID), channel, "CUSTOMER_PHONE", customer.Phone)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-cphone-%s", actionID), channel, "CUSTOMER_PHONE", sanitizeSIPHeaderValue(customer.Phone))
 		}
 		if customer.Att1 != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt1-%s", actionID), channel, "CUSTOMER_ATT1", customer.Att1)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt1-%s", actionID), channel, "CUSTOMER_ATT1", sanitizeSIPHeaderValue(customer.Att1))
 		}
 		if customer.Att2 != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt2-%s", actionID), channel, "CUSTOMER_ATT2", customer.Att2)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt2-%s", actionID), channel, "CUSTOMER_ATT2", sanitizeSIPHeaderValue(customer.Att2))
 		}
 		if customer.Att3 != "" {
-			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt3-%s", actionID), channel, "CUSTOMER_ATT3", customer.Att3)
+			_ = c.SetVar(ctx, fmt.Sprintf("setvar-catt3-%s", actionID), channel, "CUSTOMER_ATT3", sanitizeSIPHeaderValue(customer.Att3))
 		}
 	}
 

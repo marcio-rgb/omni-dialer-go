@@ -268,6 +268,11 @@ func (tm *TrunkManager) handleUserEvent(ctx context.Context, attrs map[string]st
 		if callID != "" {
 			tm.channels.SetCallDisposition(callID, domain.DispositionVoicemail)
 		}
+	case "PredictiveRoomBusy":
+		callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
+		if callID != "" {
+			tm.channels.SetCallDisposition(callID, domain.DispositionAbandoned)
+		}
 	case "InboundCall":
 		tm.channels.MarkAnswered(channel, uniqueID, time.Now())
 		if inb != nil {

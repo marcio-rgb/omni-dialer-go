@@ -391,7 +391,6 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 
 	// 2. Busca o próximo operador disponível na fila Redis `dialer:idle_agents` com trava distribuída (Race Condition Prevention)
 	var agentData *domain.AgentRedisData
-	var roomName string
 	var userID string
 
 	for attempt := 0; attempt < 3; attempt++ {
@@ -406,7 +405,6 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 			if lockErr == nil && acquired {
 				agentData = agentRedis
 				userID = agentRedis.AgentID
-				roomName = targetRoom
 				if callID != "" {
 					pe.channels.AssignAgent(callID, agentRedis.AgentID)
 				}
@@ -423,7 +421,6 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				userID = agent.AgentID
-				roomName = targetRoom
 				agentData = &domain.AgentRedisData{
 					AgentID:     agent.AgentID,
 					LiveKitRoom: targetRoom,
@@ -437,17 +434,16 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	}
 
 	if agentData == nil {
-		roomName = fmt.Sprintf("sala_campanha_%s", campaignID)
-		userID = roomName
-		agentData = &domain.AgentRedisData{
-			AgentID:     userID,
-			LiveKitRoom: roomName,
+		log.Printf("[PREDICTIVE-HUMAN] Nenhum operador ocioso com trava livre na fila Redis. Desligando chamada (Cause 17) para evitar ligação muda no cliente %s", phone)
+		if callID != "" {
+			pe.channels.SetCallDisposition(callID, domain.DispositionAbandoned)
 		}
-		log.Printf("[PREDICTIVE-HUMAN] Nenhum operador ocioso com trava livre na fila Redis. Utilizando sala fallback '%s'", roomName)
+		_ = pe.cache.SetInflatedSuccessRate(ctx, 30*time.Second)
+		actionID := fmt.Sprintf("pred-no-agent-%d", time.Now().UnixNano())
+		return pe.ami.Hangup(ctx, actionID, channel, 17)
 	}
 
-
-	// 3. Disparo assíncrono do webhook inject-lead (sem travar a telefonia)
+	// 3. Disparo assíncrono do webhook inject-lead com resiliência (sem travar a telefonia)
 	if pe.webhookClient != nil {
 		go pe.dispatchInjectLeadWebhook(callID, userID, phone, campaignID)
 	}
@@ -497,7 +493,14 @@ func (pe *PredictiveEngine) dispatchInjectLeadWebhook(callID, userID, phone, cam
 	}
 
 	if pe.webhookClient != nil {
-		_ = pe.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
+		for attempt := 1; attempt <= 2; attempt++ {
+			err := pe.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
+			if err == nil {
+				break
+			}
+			log.Printf("[INJECT-LEAD-WEBHOOK] Tentativa %d/2 falhou para o operador %s: %v", attempt, userID, err)
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 }
 
