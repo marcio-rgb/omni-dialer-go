@@ -115,7 +115,7 @@ sequenceDiagram
   4. **Saturação de Troncos:** Todos os troncos elegíveis atingem `active >= max_channels` ou PBX atinge teto global.
 - **Gatilho de Início:** Demanda recebida com operadores ociosos (`available_agents > 0`) e fila de leads abastecida.
 - **Cálculo de Overdialing com Piso Mínimo:** $\text{Demand} = \max\left(\text{numAgents} \times \text{minRatio}, \left\lceil \frac{\text{numAgents}}{\text{contactProb}} \times \left(1.0 + \frac{\text{ringTime}}{\text{talkTime}}\right) \times \text{aggressiveness}\right\rceil\right)$, garantindo no mínimo 7 canais por operador disponível.
-- **CallerID:** [`randomizeCallerID`](file:///home/marcio/ominichat/dialer-go/internal/core/predictive_engine.go#L190) preserva DDD e varia os 4 dígitos finais.
+- **CallerID:** Preserva estritamente o número real discado do lead (`destPhone`), garantindo resolução imediata de contatos no CRM conectado.
 - **Injeção de Identidade e Áudio:**
   - `LEAD_NAME`: Nome original completo com acentos (`leads.name`, ex.: `"MARCIO NASCIMENTO"`), injetado no Asterisk e repassado aos headers SIP do LiveKit (`X-Lead-Name`), CRM e tela do operador.
   - `AUDIO_NAME`: Primeiro nome normalizado (`leads.first_name`, ex.: `"marcio"`), armazenado como slug no banco e indexado em memória para playback local O(1).
@@ -283,7 +283,6 @@ O Agente Auditor utiliza as funções e stored procedures do PostgreSQL ([`datab
 | **HTTP Middleware** | `IPWhitelistMiddleware` | `(next http.Handler) http.Handler` | `http.Handler` (Validação CIDR / IP / Wildcard) | Não | Não |
 | **Predictive HTTP** | `Demand` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `PredictiveDemandResponse`) | Sim (Toggle) | Não |
 | **Predictive Core** | `ProcessDemand` | `(ctx context.Context, req *domain.PredictiveDemandRequest)` | `(*domain.PredictiveDemandResponse, error)` | Sim (Toggle) | Não |
-| **Predictive Core** | `randomizeCallerID` | `(destPhone string)` | `string` | Não | Não |
 | **Predictive Core** | `HandlePredictiveHuman` | `(ctx context.Context, channel, uniqueID, phone, campaignID, leadID string)` | `error` | Sim (Toggle) | Não |
 | **Predictive Core** | `HandlePredictiveAi` | `(ctx context.Context, channel, uniqueID, phone, campaignID, leadID string)` | `error` | Sim (Toggle) | Não |
 | **Manual HTTP** | `DialManual` | `(w http.ResponseWriter, r *http.Request)` | `void` (JSON `ManualCallResponse`) | Sim (Toggle) | Não |

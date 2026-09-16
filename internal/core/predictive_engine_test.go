@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -88,63 +87,61 @@ func (m *mockCachePredictive) ReleaseRoomLock(ctx context.Context, roomName stri
 
 
 
-func TestPredictiveEngine_RandomizeCallerID_ZeroNormalization(t *testing.T) {
-	pe := &PredictiveEngine{}
-
-	testCases := []struct {
-		name         string
-		destPhone    string
-		expectLen    int
-		expectPrefix string
-	}{
-		{
-			name:         "10 dígitos fixo local (N10)",
-			destPhone:    "2133445566",
-			expectLen:    10,
-			expectPrefix: "213344", // preserva os 6 primeiros dígitos
-		},
-		{
-			name:         "11 dígitos celular (N11)",
-			destPhone:    "21999914324",
-			expectLen:    11,
-			expectPrefix: "2199991", // preserva os 7 primeiros dígitos
-		},
-		{
-			name:         "12 dígitos com zero DDD",
-			destPhone:    "021999914324",
-			expectLen:    12,
-			expectPrefix: "02199991", // preserva com zero
-		},
-		{
-			name:         "13 dígitos internacional DDI 55",
-			destPhone:    "5521999914324",
-			expectLen:    13,
-			expectPrefix: "552199991", // preserva com 55
-		},
-		{
-			name:         "14 dígitos com CSP operadora",
-			destPhone:    "01521999914324",
-			expectLen:    14,
-			expectPrefix: "0152199991", // preserva CSP
-		},
-		{
-			name:         "Menos de 10 dígitos (retorna inalterado)",
-			destPhone:    "12345678",
-			expectLen:    8,
-			expectPrefix: "12345678",
+func TestPredictiveEngine_CallerID_PreservesDialedNumber(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-1", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-1",
+			TenantID:    "tenant-test",
+			IsEnabled:   true,
+			Direction:   domain.DirectionOutbound,
+			MaxChannels: 50,
 		},
 	}
+	campaign := &domain.Campaign{
+		ID:             "camp-1",
+		TenantID:       "tenant-test",
+		Mode:           domain.CampaignModePredictive,
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-1",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 10, available: 10}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := pe.randomizeCallerID(tc.destPhone)
-			if len(result) != tc.expectLen {
-				t.Errorf("tamanho incorreto: esperado %d, obtido %d (%s)", tc.expectLen, len(result), result)
-			}
-			if !strings.HasPrefix(result, tc.expectPrefix) {
-				t.Errorf("prefixo alterado incorretamente: esperado começar com '%s', obtido '%s'", tc.expectPrefix, result)
-			}
+	testPhones := []string{"18988242441", "21999914324", "1133445566", "5518988242441"}
+
+	for _, phone := range testPhones {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  phone,
+			Name:   "Teste Lead",
+			CPF:    "12345678901",
+			LeadID: 1,
 		})
+		cache := &mockCachePredictive{
+			queue: []string{string(leadJSON)},
+		}
+
+		engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+		req := &domain.PredictiveDemandRequest{
+			TenantID:   "tenant-test",
+			CampaignID: "camp-1",
+			AvailableAgents: []domain.AgentDemandDTO{
+				{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+			},
+		}
+
+		_, err := engine.ProcessDemand(ctx, req)
+		if err != nil {
+			t.Fatalf("ProcessDemand falhou para %s: %v", phone, err)
+		}
+
+		if ami.lastCallerID != phone {
+			t.Errorf("CallerID deve ser estritamente o número discado: esperado %s, obtido %s", phone, ami.lastCallerID)
+		}
 	}
 }
 
@@ -215,6 +212,9 @@ func TestPredictiveEngine_ProcessDemand_ZeroNormalization(t *testing.T) {
 		t.Errorf("lastChannel incorreto: esperado '%s', obtido '%s'", expectedDialPrefix, ami.lastChannel)
 	}
 
+	if ami.lastCallerID != expectedPhone {
+		t.Errorf("lastCallerID incorreto: esperado '%s', obtido '%s'", expectedPhone, ami.lastCallerID)
+	}
 	if ami.lastVars["PHONE"] != expectedPhone {
 		t.Errorf("PHONE var incorreta: esperado '%s', obtido '%s'", expectedPhone, ami.lastVars["PHONE"])
 	}

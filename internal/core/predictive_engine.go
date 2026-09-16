@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -291,7 +290,7 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			destPhone = digitsOnly
 		}
 
-		callerID := pe.randomizeCallerID(destPhone)
+		callerID := destPhone
 		dialChannel := selectedTrunk.DialString(destPhone)
 		actionID := fmt.Sprintf("orig-%s", callID)
 
@@ -350,16 +349,6 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 	}, nil
 }
 
-// randomizeCallerID preserva o DDD e randomiza os últimos 4 dígitos.
-func (pe *PredictiveEngine) randomizeCallerID(destPhone string) string {
-	if len(destPhone) >= 10 {
-		prefix := destPhone[:len(destPhone)-4]
-		randomSuffix := rand.Intn(9000) + 1000
-		return fmt.Sprintf("%s%d", prefix, randomSuffix)
-	}
-	return destPhone
-}
-
 // HandlePredictiveHuman é acionado quando o Asterisk detecta humano no triagem-amd (UserEvent PredictiveHuman)
 func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, uniqueID, phone, campaignID, leadID string) error {
 	callID := pe.channels.GetCallIDByAsterisk(channel, uniqueID)
@@ -367,8 +356,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	// 1. Extrai metadados do cliente a partir do canal ativo
 	var customer *domain.CustomerMetadata
 	if callID != "" {
-		activeChan := pe.channels.GetActiveChannel(callID)
-		if activeChan != nil {
+		if activeChan := pe.channels.GetActiveChannel(callID); activeChan != nil {
 			customer = &domain.CustomerMetadata{
 				CustomerID: activeChan.CPF,
 				Name:       activeChan.Name,
@@ -383,10 +371,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 		}
 	}
 	if customer == nil {
-		customer = &domain.CustomerMetadata{
-			CustomerID: leadID,
-			Phone:      phone,
-		}
+		customer = &domain.CustomerMetadata{CustomerID: leadID, Phone: phone}
 	}
 
 	// 2. Busca o próximo operador disponível na fila Redis `dialer:idle_agents` com trava distribuída (Race Condition Prevention)
@@ -400,7 +385,6 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 			if targetRoom == "" {
 				targetRoom = fmt.Sprintf("sala_agente_%s", agentRedis.AgentID)
 			}
-
 			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				agentData = agentRedis
@@ -421,10 +405,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				userID = agent.AgentID
-				agentData = &domain.AgentRedisData{
-					AgentID:     agent.AgentID,
-					LiveKitRoom: targetRoom,
-				}
+				agentData = &domain.AgentRedisData{AgentID: agent.AgentID, LiveKitRoom: targetRoom}
 				if callID != "" {
 					pe.channels.AssignAgent(callID, agent.AgentID)
 				}
@@ -452,32 +433,25 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	return pe.ami.TransferToLiveKit(ctx, channel, agentData, customer)
 }
 
-
 func (pe *PredictiveEngine) dispatchInjectLeadWebhook(callID, userID, phone, campaignID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	tenantID := "default"
 	var cpf, name, att1, att2, att3 string
-
 	if callID != "" {
-		activeChan := pe.channels.GetActiveChannel(callID)
-		if activeChan != nil {
+		if activeChan := pe.channels.GetActiveChannel(callID); activeChan != nil {
 			if activeChan.TenantID != "" {
 				tenantID = activeChan.TenantID
 			}
-			cpf = activeChan.CPF
-			name = activeChan.Name
-			att1 = activeChan.Att1
-			att2 = activeChan.Att2
-			att3 = activeChan.Att3
+			cpf, name = activeChan.CPF, activeChan.Name
+			att1, att2, att3 = activeChan.Att1, activeChan.Att2, activeChan.Att3
 		}
 	}
 
 	var webhookURL string
 	if pe.tenants != nil {
-		tenant, err := pe.tenants.GetByID(ctx, tenantID)
-		if err == nil && tenant != nil {
+		if tenant, err := pe.tenants.GetByID(ctx, tenantID); err == nil && tenant != nil {
 			webhookURL = tenant.Webhook
 		}
 	}
@@ -494,11 +468,9 @@ func (pe *PredictiveEngine) dispatchInjectLeadWebhook(callID, userID, phone, cam
 
 	if pe.webhookClient != nil {
 		for attempt := 1; attempt <= 2; attempt++ {
-			err := pe.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
-			if err == nil {
+			if err := pe.webhookClient.NotifyInjectLead(ctx, webhookURL, params); err == nil {
 				break
 			}
-			log.Printf("[INJECT-LEAD-WEBHOOK] Tentativa %d/2 falhou para o operador %s: %v", attempt, userID, err)
 			time.Sleep(200 * time.Millisecond)
 		}
 	}

@@ -90,9 +90,7 @@ exten => s,1,NoOp(--- INJETANDO CABECALHOS SIP PARA LIVEKIT ---)
 - Sanitiza caracteres para discagem e preserva número original para variáveis de canal:
   ```go
   vars["PHONE"] = destPhone
-  vars["__PHONE"] = destPhone
-  ```
-- `randomizeCallerID(destPhone)` mantém o prefixo intacto e varia os 4 últimos dígitos apenas quando `len(destPhone) >= 10`.
+- `callerID := destPhone`: o CallerID preserva estritamente o número real discado sem qualquer mutação de dígitos.
 
 ---
 

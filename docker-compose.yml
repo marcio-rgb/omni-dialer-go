@@ -28,7 +28,7 @@ services:
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789528843
+      - UPDATE_TIMESTAMP=1789558053
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro

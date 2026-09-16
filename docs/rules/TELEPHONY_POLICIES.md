@@ -53,12 +53,12 @@ Conforme as diretrizes regulatórias de telecomunicações:
 
 ---
 
-## 4. Randomização Dinâmica de CallerID (BINA)
+## 4. Preservação Estrita do Número Discado como CallerID
 
-Para evitar bloqueios de operadoras (SPAM / Robo-call flag):
-1. Cada campanha possui uma lista de números DID autorizados (`caller_ids`).
-2. O discador seleciona aleatoriamente um número da lista a cada chamada via gerador criptográfico pseudo-randômico.
-3. O DID selecionado é injetado nas variáveis de canal Asterisk `CALLERID(num)` e `P-Asserted-Identity` antes do envio do `INVITE` SIP pela operadora.
+Para garantir a integridade relacional e a resolução imediata de contatos no sistema conectado e CRMs externos:
+1. O discador preditivo e manual envia como `callerID` estritamente o número real discado do lead (`destPhone`).
+2. É proibido aplicar mutações artificiais, sufixos aleatórios ou alterações de dígitos na identificação do lead.
+3. O número real discado é injetado nas variáveis de canal Asterisk e no comando AMI Originate, assegurando que o webhook, o histórico de contatos (`contatofone`) e a tela de atendimento identifiquem com exatidão o lead atendido.
 
 ---
 
