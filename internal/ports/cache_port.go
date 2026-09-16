@@ -43,6 +43,11 @@ type CachePort interface {
 	PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error)
 	PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error
 	RemoveAgentFromQueues(ctx context.Context, agentID string) error
+
+	// Trava Distribuída de Sala (Race Condition Prevention)
+	AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error)
+	ReleaseRoomLock(ctx context.Context, roomName string) error
 }
+
 
 

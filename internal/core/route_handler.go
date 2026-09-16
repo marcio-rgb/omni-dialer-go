@@ -71,43 +71,67 @@ func (rh *RouteHandler) HandleHumanDetected(ctx context.Context, channel, unique
 		}
 	}
 
-	// 2. Busca o operador livre na fila `dialer:idle_agents` (com timeout curto de 50ms)
-	agent, err := rh.cache.PopIdleAgent(ctx, 50*time.Millisecond)
-	roomName := fmt.Sprintf("sala_campanha_%s", campaignID)
-	userID := roomName
-
+	// 2. Busca o operador livre na fila `dialer:idle_agents` garantindo trava distribuída SETNX (Race Condition Prevention)
 	var agentData *domain.AgentRedisData
-	if err == nil && agent != nil && agent.AgentID != "" {
-		agentData = agent
-		userID = agent.AgentID
-		roomName = agent.LiveKitRoom
-		if roomName == "" {
-			roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
+	var roomName string
+	var userID string
+
+	// Tenta até 3 vezes obter um operador ocioso cuja trava de sala seja adquirida com sucesso
+	for attempt := 0; attempt < 3; attempt++ {
+		agent, err := rh.cache.PopIdleAgent(ctx, 50*time.Millisecond)
+		if err == nil && agent != nil && agent.AgentID != "" {
+			targetRoom := agent.LiveKitRoom
+			if targetRoom == "" {
+				targetRoom = fmt.Sprintf("sala_agente_%s", agent.AgentID)
+			}
+
+			// Tenta adquirir a trava distribuída SETNX lock:room:<room_name> 1 EX 10
+			acquired, lockErr := rh.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
+			if lockErr == nil && acquired {
+				agentData = agent
+				userID = agent.AgentID
+				roomName = targetRoom
+				if callID != "" {
+					rh.channels.AssignAgent(callID, agent.AgentID)
+				}
+				log.Printf("[RACE-PREVENTION] Trava de sala '%s' adquirida com sucesso para o agente %s", targetRoom, agent.AgentID)
+				break
+			}
+			log.Printf("[RACE-PREVENTION] Concorrência detectada! Trava para sala '%s' pertence a outra chamada. Buscando próximo operador...", targetRoom)
+			continue
 		}
-		if callID != "" {
-			rh.channels.AssignAgent(callID, agent.AgentID)
-		}
-	} else {
+
 		// Fallback: tenta recuperar operador da fila volátil por campanha
 		nextAgent, err := rh.cache.GetNextAvailableAgent(ctx, campaignID)
 		if err == nil && nextAgent != nil && nextAgent.AgentID != "" {
-			userID = nextAgent.AgentID
-			roomName = fmt.Sprintf("sala_agente_%s", nextAgent.AgentID)
-			agentData = &domain.AgentRedisData{
-				AgentID:     nextAgent.AgentID,
-				LiveKitRoom: roomName,
-			}
-			if callID != "" {
-				rh.channels.AssignAgent(callID, nextAgent.AgentID)
-			}
-		} else {
-			log.Printf("[ROUTE-HANDLER] Nenhum operador ocioso disponível no momento. Utilizando sala fallback '%s'", roomName)
-			agentData = &domain.AgentRedisData{
-				AgentID:     userID,
-				LiveKitRoom: roomName,
+			targetRoom := fmt.Sprintf("sala_agente_%s", nextAgent.AgentID)
+			acquired, lockErr := rh.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
+			if lockErr == nil && acquired {
+				userID = nextAgent.AgentID
+				roomName = targetRoom
+				agentData = &domain.AgentRedisData{
+					AgentID:     nextAgent.AgentID,
+					LiveKitRoom: targetRoom,
+				}
+				if callID != "" {
+					rh.channels.AssignAgent(callID, nextAgent.AgentID)
+				}
+				break
 			}
 		}
 	}
+
+	// Se nenhum operador tiver trava concedida, utiliza sala de transbordo da campanha
+	if agentData == nil {
+		roomName = fmt.Sprintf("sala_campanha_%s", campaignID)
+		userID = roomName
+		agentData = &domain.AgentRedisData{
+			AgentID:     userID,
+			LiveKitRoom: roomName,
+		}
+		log.Printf("[ROUTE-HANDLER] Nenhum operador livre com trava disponível. Transferindo para sala fallback de campanha '%s'", roomName)
+	}
+
 
 	// 3. Notificação HTTP em background para o webhook do sistema (se configurado)
 	if rh.webhookClient != nil {

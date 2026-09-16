@@ -387,5 +387,27 @@ func (r *RedisAdapter) StartKeyspaceListener(ctx context.Context, db int) {
 	}()
 }
 
+// AcquireRoomLock cria uma trava distribuída de sala no Redis (SETNX lock:room:<room_name> 1 EX <ttl>)
+func (r *RedisAdapter) AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error) {
+	if roomName == "" {
+		return true, nil
+	}
+	key := fmt.Sprintf("lock:room:%s", roomName)
+	if ttl <= 0 {
+		ttl = 10 * time.Second
+	}
+	return r.client.SetNX(ctx, key, "1", ttl).Result()
+}
+
+// ReleaseRoomLock remove a trava distribuída de sala do Redis
+func (r *RedisAdapter) ReleaseRoomLock(ctx context.Context, roomName string) error {
+	if roomName == "" {
+		return nil
+	}
+	key := fmt.Sprintf("lock:room:%s", roomName)
+	return r.client.Del(ctx, key).Err()
+}
+
+
 
 

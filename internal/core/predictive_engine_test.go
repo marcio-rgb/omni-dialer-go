@@ -79,6 +79,12 @@ func (m *mockCachePredictive) PushIdleAgent(ctx context.Context, agent *domain.A
 func (m *mockCachePredictive) RemoveAgentFromQueues(ctx context.Context, agentID string) error {
 	return nil
 }
+func (m *mockCachePredictive) AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+func (m *mockCachePredictive) ReleaseRoomLock(ctx context.Context, roomName string) error {
+	return nil
+}
 
 
 

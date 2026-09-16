@@ -389,42 +389,63 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 		}
 	}
 
-	// 2. Busca o próximo operador disponível na fila Redis `dialer:idle_agents` ou fallback por campanha
-	agentRedis, err := pe.cache.PopIdleAgent(ctx, 50*time.Millisecond)
-	roomName := fmt.Sprintf("sala_campanha_%s", campaignID)
-	userID := roomName
-
+	// 2. Busca o próximo operador disponível na fila Redis `dialer:idle_agents` com trava distribuída (Race Condition Prevention)
 	var agentData *domain.AgentRedisData
-	if err == nil && agentRedis != nil && agentRedis.AgentID != "" {
-		agentData = agentRedis
-		userID = agentRedis.AgentID
-		roomName = agentRedis.LiveKitRoom
-		if roomName == "" {
-			roomName = fmt.Sprintf("sala_agente_%s", agentRedis.AgentID)
+	var roomName string
+	var userID string
+
+	for attempt := 0; attempt < 3; attempt++ {
+		agentRedis, err := pe.cache.PopIdleAgent(ctx, 50*time.Millisecond)
+		if err == nil && agentRedis != nil && agentRedis.AgentID != "" {
+			targetRoom := agentRedis.LiveKitRoom
+			if targetRoom == "" {
+				targetRoom = fmt.Sprintf("sala_agente_%s", agentRedis.AgentID)
+			}
+
+			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
+			if lockErr == nil && acquired {
+				agentData = agentRedis
+				userID = agentRedis.AgentID
+				roomName = targetRoom
+				if callID != "" {
+					pe.channels.AssignAgent(callID, agentRedis.AgentID)
+				}
+				log.Printf("[RACE-PREVENTION] Trava preditiva de sala '%s' adquirida para o agente %s", targetRoom, agentRedis.AgentID)
+				break
+			}
+			log.Printf("[RACE-PREVENTION] Concorrência detectada! Trava para sala '%s' ocupada. Buscando próximo operador...", targetRoom)
+			continue
 		}
-		if callID != "" {
-			pe.channels.AssignAgent(callID, agentRedis.AgentID)
-		}
-	} else {
+
 		agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
 		if err == nil && agent != nil && agent.AgentID != "" {
-			userID = agent.AgentID
-			roomName = fmt.Sprintf("sala_agente_%s", agent.AgentID)
-			agentData = &domain.AgentRedisData{
-				AgentID:     agent.AgentID,
-				LiveKitRoom: roomName,
-			}
-			if callID != "" {
-				pe.channels.AssignAgent(callID, agent.AgentID)
-			}
-		} else {
-			log.Printf("[PREDICTIVE-HUMAN] Nenhum operador ocioso na fila Redis. Utilizando sala fallback '%s'", roomName)
-			agentData = &domain.AgentRedisData{
-				AgentID:     userID,
-				LiveKitRoom: roomName,
+			targetRoom := fmt.Sprintf("sala_agente_%s", agent.AgentID)
+			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
+			if lockErr == nil && acquired {
+				userID = agent.AgentID
+				roomName = targetRoom
+				agentData = &domain.AgentRedisData{
+					AgentID:     agent.AgentID,
+					LiveKitRoom: targetRoom,
+				}
+				if callID != "" {
+					pe.channels.AssignAgent(callID, agent.AgentID)
+				}
+				break
 			}
 		}
 	}
+
+	if agentData == nil {
+		roomName = fmt.Sprintf("sala_campanha_%s", campaignID)
+		userID = roomName
+		agentData = &domain.AgentRedisData{
+			AgentID:     userID,
+			LiveKitRoom: roomName,
+		}
+		log.Printf("[PREDICTIVE-HUMAN] Nenhum operador ocioso com trava livre na fila Redis. Utilizando sala fallback '%s'", roomName)
+	}
+
 
 	// 3. Disparo assíncrono do webhook inject-lead (sem travar a telefonia)
 	if pe.webhookClient != nil {

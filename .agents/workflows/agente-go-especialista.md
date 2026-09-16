@@ -146,6 +146,11 @@ graph TD
 | `HasInflatedSuccessRate` | `HasInflatedSuccessRate(ctx context.Context) (bool, error)` | Verifica se a penalidade de pacing pós-abandono está ativa. |
 | `StoreAvailableAgents` | `StoreAvailableAgents(ctx context.Context, campaignID string, agents []domain.AgentDemandDTO, ttl time.Duration) error` | Grava operadores aptos com ordem de prioridade para entrega. |
 | `GetNextAvailableAgent` | `GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error)` | Extrai o operador livre prioritário para transferência. |
+| `PopIdleAgent` | `PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error)` | Pop atômico da fila de operadores livres `dialer:idle_agents`. |
+| `PushIdleAgent` | `PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error` | Devolve operador para a fila `dialer:idle_agents`. |
+| `RemoveAgentFromQueues` | `RemoveAgentFromQueues(ctx context.Context, agentID string) error` | Remove operador das filas no Redis ao ficar offline/ocupado. |
+| `AcquireRoomLock` | `AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error)` | Cria lock no Redis (`SETNX lock:room:<room_name> 1 EX ttl`) para evitar que duas goroutines usem a mesma sala. |
+| `ReleaseRoomLock` | `ReleaseRoomLock(ctx context.Context, roomName string) error` | Remove lock distribuído da sala no Redis (`DEL lock:room:<room_name>`). |
 | `GetCallsSummaryBuffer` | `GetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string) (*domain.CallsSummaryResponse, time.Duration, error)` | Lê buffer determinístico de relatório de 15 minutos (900s). |
 | `SetCallsSummaryBuffer` | `SetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string, data *domain.CallsSummaryResponse, ttl time.Duration) error` | Grava buffer de relatório no Redis. |
 

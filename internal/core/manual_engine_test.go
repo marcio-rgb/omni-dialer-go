@@ -129,6 +129,12 @@ func (m *mockCache) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisD
 func (m *mockCache) RemoveAgentFromQueues(ctx context.Context, agentID string) error {
 	return nil
 }
+func (m *mockCache) AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+func (m *mockCache) ReleaseRoomLock(ctx context.Context, roomName string) error {
+	return nil
+}
 
 
 
