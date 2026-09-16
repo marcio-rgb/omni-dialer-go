@@ -2,6 +2,7 @@
 /dialer
 /vosk-eagi
 /dialer-go
+/storage
 *.exe
 *.test
 
