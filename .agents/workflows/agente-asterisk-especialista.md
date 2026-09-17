@@ -137,6 +137,20 @@ Para evitar quebra de passagem de áudio bidirecional e timeouts de mídia (`med
 2. **Configuração do Gateway de Conferência (`livekit-sip`):**
    - No `config/sip.yaml`, escutar na porta `sip_port: 5062` e faixa RTP `11100-12000`, conectando ao LiveKit Server Core (Servidor 1) via WebSocket e Redis.
 
+### 6.2. Firewall Perimetral SIP/RTP (`TELEPHONY-FIREWALL` & `DOCKER-USER`)
+Para blindar o Asterisk e LiveKit contra scanners externos, força bruta e tráfego SIP abusivo:
+1. **Cadeia Canônica:** Cadeia customizada `TELEPHONY-FIREWALL` aplicada no topo de `INPUT` e `DOCKER-USER`.
+2. **Whitelist de Servidores Autorizados:**
+   - `84.247.135.255` (Dialer-Go / Asterisk Produção)
+   - `38.242.219.186` (Servidor Teste / Legado)
+   - `37.60.228.113` (Servidor Chat / LiveKit)
+   - `62.84.185.160` (Servidor LiveKit Egress)
+   - `38.242.245.126` (Servidor Central VitalPBX)
+   - Operadoras PSTN: `54.207.13.68` (RVX), `52.67.163.135` (SobreIP), `15.228.9.161` (Ventitore).
+3. **Portas Protegidas:** Bloqueio estrito de pacotes não autorizados em `5060/udp`, `5060/tcp`, `5070/udp`, `10100:11000/udp` e `12000:12100/udp`.
+4. **Persistência de Sistema:** Gerenciado via `/etc/systemd/system/telephony-firewall.service` (`After=docker.service`) e `/etc/iptables/rules.v4` (`netfilter-persistent`).
+
+
 
 ---
 
