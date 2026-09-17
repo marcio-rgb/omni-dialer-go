@@ -65,11 +65,11 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | `[pre-dial-vivo]` | Normalização de cabeçalhos SIP | Injeta `TRUNK_ID` no `CALLERID(num)`, `P-Asserted-Identity` e `User-Agent` antes do envio do INVITE. |
 | `[outbound-vivo]` | Rota externa direta | Utiliza prefixo `b(pre-dial-vivo^s^1)` no comando `Dial`. |
-| `[from-dialer-amd]` | Ponto de entrada preditivo | Salto sem delay (`Goto(triagem-amd,s,1)`) para o motor de análise. |
+| `[from-dialer-amd]` | Ponto de entrada preditivo / IA Direto | Inicia gravação estéreo `MixMonitor`, emite `UserEvent(CallAnswered)` e `UserEvent(PredictiveHuman)`, e encaminha diretamente para `${TARGET_ROOM}` (ex: `call_${CAMPAIGN_ID}_${LEAD_ID}` ou `${AGENT_ROOM}`) no endpoint local `livekit-sip` (:5062). |
 | `[triagem-amd]` | Triagem Ativa Full-Duplex | Atendimento imediato (`Answer`), disparo de `UserEvent(CallAnswered)` para marcação precisa de `answered_at`, `MixMonitor` em background (`b`), reprodução da saudação única natural `"Alô, tudo bem!?"` (`alo_tudo_bem.wav`) e escuta concorrente via EAGI Vosk (`FD 3`). Sem silêncio passivo (*dead air*). |
 | `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-Name`, `X-Lead-CPF` e `X-Campaign-Id`. **Ressalva:** `${LEAD_NAME}` recebe estritamente o nome original completo com acentos (`leads.name`), enquanto `${AUDIO_NAME}` recebe o slug normalizado para áudios locais `.wav`. |
 | `[from-dialer-manual]` | Entrega de discagem manual | Disparo de `UserEvent(CallAnswered)` na conexão e roteamento da perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
-| `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Validação anti-corrida via `GROUP(livekit_rooms)=${AGENT_ROOM}` e `GROUP_COUNT(${AGENT_ROOM}@livekit_rooms) > 1`. Se a sala já possuir 1 chamada ativa, dispara `UserEvent(PredictiveRoomBusy)` e rejeita com `Hangup(17)` (User Busy). Se livre, a extensão `9999` conecta a chamada à sala `AGENT_ROOM` retornando dinamicamente ao IP de origem (`${CHANNEL(pjsip,remote_addr)}`), sem IPs fixos, ou com fallback para o endpoint `livekit-sip`. |
+| `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Validação anti-corrida via `GROUP(livekit_rooms)=${AGENT_ROOM}` e `GROUP_COUNT(${AGENT_ROOM}@livekit_rooms) > 1`. Se a sala já possuir 1 chamada ativa, dispara `UserEvent(PredictiveRoomBusy)` e rejeita com `Hangup(17)` (User Busy). Se livre, a extensão `9999` conecta a chamada à sala `AGENT_ROOM` via tronco local co-localizado `livekit-sip` (`sip:127.0.0.1:5062`), com latência zero e suporte ao codec Opus. |
 
 ### 3.2. Regra de Ouro do Atendimento Humano
 > [!IMPORTANT]
@@ -110,8 +110,8 @@ O script EAGI executa como processo filho do Asterisk com comunicação de ultra
 
 ## 6. Otimização de PJSIP, Codecs e Troncos
 
-1. **Prioridade de Codecs:** Configurar `disallow=all`, `allow=opus,alaw,ulaw` para minimizar transcoding e economizar ciclos de CPU.
-2. **Qualify e RTT:** Manter `qualify_frequency=30` nos endpoints PJSIP para alimentar a telemetria do `TrunkManager` no Dialer-Go.
+1. **Prioridade de Codecs:** Configurar `disallow=all`, `allow=opus,alaw,ulaw` para minimizar transcoding e economizar ciclos de CPU com suporte direto a WebRTC HD Audio.
+2. **Qualify e RTT:** Manter `qualify_frequency=15` no endpoint local `livekit-sip` (`sip:127.0.0.1:5062`), operando com telemetria e qualify em tempo real via AMI.
 3. **Mapeamento de Causas de Desconexão (Q.850):**
    - `Cause 16` (Normal Clearing): Atendimento finalizado ou caixa postal descartada.
    - `Cause 17` (User Busy): Ocupado.
@@ -129,13 +129,14 @@ Para evitar quebra de passagem de áudio bidirecional e timeouts de mídia (`med
    local_net=10.0.0.0/8
    local_net=172.16.0.0/12
    local_net=192.168.0.0/16
-   external_media_address=37.60.228.113
-   external_signaling_address=37.60.228.113
+   external_media_address=84.247.135.255
+   external_signaling_address=84.247.135.255
    ```
-   - **Comunicação Interna (Conferência / LiveKit SIP):** Asterisk reconhece a rota na overlay `minha_rede` (`10.0.1.0/24`) e sinaliza o IP interno `10.0.1.x`, trafegando RTP direto sem hairpinning ou perda de pacotes.
-   - **Comunicação Externa (Troncos PSTN / RVX / SobreIP):** Asterisk insere o IP público `37.60.228.113` no SDP `c=IN IP4`, garantindo que a operadora saiba exatamente para onde enviar o fluxo de áudio da perna do cliente.
+   - **Comunicação Interna (Conferência / LiveKit SIP Co-localizado):** Asterisk conecta diretamente ao endpoint `livekit-sip` em `127.0.0.1:5062` com RTP local na faixa `11100-12000`, eliminando perda de pacotes e jitter de rede WAN.
+   - **Comunicação Externa (Troncos PSTN / RVX / SobreIP):** Asterisk insere o IP público `84.247.135.255` no SDP `c=IN IP4`, garantindo que a operadora saiba exatamente para onde enviar o fluxo de áudio da perna do cliente.
 2. **Configuração do Gateway de Conferência (`livekit-sip`):**
-   - No `SIP_CONFIG_BODY`, manter `use_external_ip: false` e definir `local_net: "10.0.1.0/24"`. Isso impede que o gateway anuncie o IP público para o Asterisk e force hairpinning via IPVS do Docker Swarm.
+   - No `config/sip.yaml`, escutar na porta `sip_port: 5062` e faixa RTP `11100-12000`, conectando ao LiveKit Server Core (Servidor 1) via WebSocket e Redis.
+
 
 ---
 

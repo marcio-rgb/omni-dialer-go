@@ -24,7 +24,8 @@ graph TD
             DialerApp["Dialer-Go Engine (Porta Host 8081)"]
             PostgresDB["PostgreSQL dialer_db (Porta 5432)"]
             RedisCache["Redis Cache DB 0 (Porta 6379)"]
-            AsteriskPBX["Asterisk PBX (PJSIP / AMI :5038)"]
+            AsteriskPBX["Asterisk PBX (PJSIP 5060 / AMI :5038)"]
+            LiveKitSIP["LiveKit SIP Gateway (Porta Host 5062)"]
             ClassificatorRouter["Classificator Router (:2800)"]
             VoskEAGI["vosk-eagi Thin Client"]
         end
@@ -32,7 +33,7 @@ graph TD
 
     subgraph ExternalConsumers["Ecossistemas Consumidores"]
         OmniChat["OmniChat Backend (37.60.228.113)"]
-        LiveKitServer["LiveKit Media Server / SIP Trunk"]
+        LiveKitServer["LiveKit Media Server Core (Servidor 1)"]
         TelephonyTrunks["Troncos SIP Externos (Vivo, RVX, SobreIP)"]
     end
 
@@ -44,7 +45,8 @@ graph TD
     
     OmniChat -->|HTTP GET / POST :8081| DialerApp
     DialerApp -->|Webhooks HTTP| OmniChat
-    AsteriskPBX <-->|PJSIP / RTP| LiveKitServer
+    AsteriskPBX <-->|PJSIP / Loopback RTP :5062| LiveKitSIP
+    LiveKitSIP <-->|WebRTC SRTP / QoS| LiveKitServer
     AsteriskPBX <-->|SIP INVITE / RTP| TelephonyTrunks
 ```
 
@@ -56,6 +58,8 @@ graph TD
 | **Redis Cache** | `dialer-go_redis` | `6379` | `6379` | TCP (Redis) |
 | **Asterisk AMI** | `dialer-go_asterisk` | `5038` | `5038` | TCP (AMI Socket) |
 | **Asterisk PJSIP** | `dialer-go_asterisk` | `5060` | `5060` | UDP / SIP |
+| **LiveKit-SIP Gateway** | `dialer-go_livekit-sip` | `5062` | `5062` | UDP / TCP (SIP Loopback) |
+| **LiveKit-SIP RTP** | `dialer-go_livekit-sip` | `11100-12000` | `11100-12000` | UDP (RTP Media) |
 | **Classificator Router** | `dialer-go_classificator-router` | `2800` | `2800` | TCP / WebSocket |
 
 ---

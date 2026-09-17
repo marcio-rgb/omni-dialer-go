@@ -69,6 +69,24 @@ services:
     networks:
       - dialer-net
 
+  dialer-livekit-sip:
+    image: livekit/sip:latest
+    container_name: dialer-livekit-sip
+    restart: unless-stopped
+    ports:
+      - "5062:5062/udp"
+      - "5062:5062/tcp"
+      - "11100-12000:11100-12000/udp"
+    volumes:
+      - ./config/sip.example.yaml:/etc/sip.yaml:ro
+    environment:
+      - SIP_CONFIG_FILE=/etc/sip.yaml
+    networks:
+      - dialer-net
+    profiles:
+      - livekit
+      - full
+
 volumes:
   dialer-pgdata:
   dialer-redisdata:

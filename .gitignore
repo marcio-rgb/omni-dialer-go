@@ -25,4 +25,6 @@ vosk-model/
 .agents/*.ENV
 .agents/*.env
 .agents/servers.ENV
+config/sip.yaml
+!config/sip.example.yaml
 bin/

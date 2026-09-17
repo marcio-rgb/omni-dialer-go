@@ -28,7 +28,7 @@ services:
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789558053
+      - UPDATE_TIMESTAMP=1789632083
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
@@ -136,6 +136,44 @@ services:
         reservations:
           cpus: '1.0'
           memory: 1G
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  # --- LIVEKIT SIP GATEWAY (CO-LOCALIZADO NO SERVIDOR DE TELEFONIA) ---
+  livekit-sip:
+    image: livekit/sip:latest
+    networks:
+      minha_rede:
+        aliases:
+          - livekit-sip
+    ports:
+      - target: 5062
+        published: 5062
+        protocol: udp
+        mode: host
+      - target: 5062
+        published: 5062
+        protocol: tcp
+        mode: host
+      - target: 11100-12000
+        published: 11100-12000
+        protocol: udp
+        mode: host
+    volumes:
+      - ./config/sip.yaml:/etc/sip.yaml:ro
+    environment:
+      - SIP_CONFIG_FILE=/etc/sip.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
       placement:
         constraints:
           - node.role == manager

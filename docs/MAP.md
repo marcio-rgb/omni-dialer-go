@@ -92,8 +92,8 @@ graph TD
 | [`extensions.conf`](file:///home/marcio/ominichat/dialer-go/extensions.conf) | Dialplan Asterisk (AMD, pré-dials, contextos de entrega e descarte). | Dialplan Modular | `TELEPHONY_POLICIES.md` |
 | [`amd.conf`](file:///home/marcio/ominichat/dialer-go/amd.conf) | Parametrização do módulo nativo `app_amd` do Asterisk. | Fast AMD Thresholds | `TELEPHONY_POLICIES.md` |
 | [`Dockerfile`](file:///home/marcio/ominichat/dialer-go/Dockerfile) | Build multi-stage estático do binário Go 1.25. | Container Imutável | DevOps |
-| [`docker-compose.yml`](file:///home/marcio/ominichat/dialer-go/docker-compose.yml) | Composição de produção (Traefik, Asterisk, Redis, Vosk). | Service Orchestration | DevOps |
-| [`docker-compose.local.yml`](file:///home/marcio/ominichat/dialer-go/docker-compose.local.yml) | Ambiente de desenvolvimento local independente. | Local Stack | DevOps |
+| [`docker-compose.yml`](file:///home/marcio/ominichat/dialer-go/docker-compose.yml) | Composição de produção (Traefik, Asterisk, LiveKit-SIP, Redis, Vosk). | Service Orchestration | DevOps |
+| [`docker-compose.local.yml`](file:///home/marcio/ominichat/dialer-go/docker-compose.local.yml) | Ambiente de desenvolvimento local e testes (Postgres, Redis, Vosk, LiveKit-SIP). | Local Stack | DevOps |
 
 ---
 
@@ -116,6 +116,8 @@ graph TD
 | Arquivo | LOC | Responsabilidade | Padrões |
 | :--- | :--- | :--- | :--- |
 | [`config/config.go`](file:///home/marcio/ominichat/dialer-go/config/config.go) | 81 | Leitura de variáveis de ambiente com fallback para defaults seguros de produção. | Singleton / Config Object |
+| [`config/sip.example.yaml`](file:///home/marcio/ominichat/dialer-go/config/sip.example.yaml) | 45 | Template canônico de configuração do LiveKit SIP Gateway co-localizado (:5062 loopback). | Configuration Template |
+
 
 ---
 
