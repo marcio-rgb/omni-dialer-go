@@ -28,7 +28,7 @@ services:
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789632189
+      - UPDATE_TIMESTAMP=1789632850
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
@@ -68,6 +68,14 @@ services:
     ports:
       - target: 5038
         published: 5038
+        protocol: tcp
+        mode: host
+      - target: 5060
+        published: 5060
+        protocol: udp
+        mode: host
+      - target: 5060
+        published: 5060
         protocol: tcp
         mode: host
       - "10100-11000:10100-11000/udp"
