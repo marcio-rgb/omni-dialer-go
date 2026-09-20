@@ -1,0 +1,44 @@
+# ==============================================================================
+# LiveKit SIP Gateway Configuration Template (config/sip.example.yaml)
+# ==============================================================================
+# Este arquivo é o modelo canônico de configuração do livekit-sip co-localizado.
+# Em produção ou ambiente de teste, crie uma cópia em `config/sip.yaml`
+# preenchendo as credenciais reais e IPs da VPC.
+
+# Chaves de autenticação da API com o LiveKit SFU Core (Servidor 1)
+api_key: "omnichat_livekit_key"
+api_secret: "OmniChat_LiveKit_Secret_Key_2026_SecurePass!987"
+
+# Conexão com o LiveKit SFU Core (Servidor 1)
+# Em produção: IP privado da VPC (ex: ws://10.0.0.10:7880 ou wss://...)
+# Em desenvolvimento local: ws://host.docker.internal:7880 ou ws://livekit:7880
+ws_url: "ws://10.0.0.10:7880"
+
+# Conexão com o Redis Core (Servidor 1) para sincronização de participantes e salas
+redis:
+  address: "10.0.0.10:6379"
+  password: "SUA_SENHA_REDIS_SECRETA"
+
+# Porta de escuta SIP local (Asterisk em 5060; LiveKit-SIP em 5062 para evitar conflito de bind)
+sip_port: 5062
+
+# Faixa de portas RTP segregada (Asterisk usa 10100-11000; LiveKit-SIP usa 11100-12000)
+rtp_port:
+  start: 11100
+  end: 12000
+
+# Permite chamadas sem autenticação SIP digest prévia (o Asterisk entrega via loopback 127.0.0.1)
+insecure: true
+
+# Regras de Despacho Automático para Salas LiveKit:
+# - room_prefix: "call_" -> Campanhas de IA / Agentes Virtuais (call_campanha_lead)
+# - room_prefix: "sala_" -> Operadores Humanos OmniChat (sala_agente_id)
+# - room_prefix: ""      -> Fallback individual para qualquer Request URI enviado pelo Asterisk
+rules:
+  - dispatch_rules:
+      - individual:
+          room_prefix: "call_"
+      - individual:
+          room_prefix: "sala_"
+      - individual:
+          room_prefix: ""

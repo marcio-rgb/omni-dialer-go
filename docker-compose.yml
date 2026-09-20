@@ -1,0 +1,194 @@
+version: '3.8'
+
+services:
+  dialer-go:
+    image: ghcr.io/marcio-rgb/omni-dialer-go:latest
+    container_name: dialer_go_core
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-go
+    environment:
+      - PORT=8081
+      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=dialer-redis:6379
+      - REDIS_DB=0
+      - ASTERISK_AMI_HOST=asterisk
+      - ASTERISK_AMI_PORT=5038
+      - ASTERISK_AMI_USER=Omnichat
+      - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=creditobr
+      - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
+      - MINIO_BUCKET=mailings
+      - MINIO_USE_SSL=false
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,84.247.135.255,*
+      - MAX_GLOBAL_CHANNELS=250
+      - HUMAN_RESERVED_QUOTA=20
+      - MIN_CHANNELS_PER_AGENT=2
+      - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
+      - UPDATE_TIMESTAMP=1789635200
+    volumes:
+      - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
+      - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
+    ports:
+      - "8081:8081"
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=minha_rede"
+        - "traefik.http.routers.dialer-go.rule=Host(`dialer.creditobr.org`)"
+        - "traefik.http.routers.dialer-go.entrypoints=websecure"
+        - "traefik.http.routers.dialer-go.tls=true"
+        - "traefik.http.routers.dialer-go.tls.certresolver=letsencryptresolver"
+        - "traefik.http.middlewares.dialer-go-stripprefix.stripprefix.prefixes=/dialer"
+        - "traefik.http.routers.dialer-go.middlewares=dialer-go-stripprefix"
+        - "traefik.http.services.dialer-go.loadbalancer.server.port=8081"
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  asterisk:
+    image: andrius/asterisk:20
+    networks:
+      minha_rede:
+        aliases:
+          - asterisk
+          - omni-asterisk
+    ports:
+      - target: 5038
+        published: 5038
+        protocol: tcp
+        mode: host
+      - target: 5060
+        published: 5060
+        protocol: udp
+        mode: host
+      - target: 5060
+        published: 5060
+        protocol: tcp
+        mode: host
+      - "10100-11000:10100-11000/udp"
+    volumes:
+      - /opt/ominichat/asterisk/conf:/etc/asterisk
+      - /opt/ominichat/asterisk/sounds:/var/lib/asterisk/sounds
+      - /opt/ominichat/asterisk/agi-bin:/var/lib/asterisk/agi-bin
+      - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor
+    environment:
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  dialer-redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru --save 60 1000
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-redis
+    volumes:
+      - dialer_redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  dialer-vosk:
+    image: alphacep/kaldi-vosk-server:latest
+    command: python3 /opt/vosk-server/websocket/asr_server.py /opt/vosk-model/model
+    ports:
+      - "2700:2700"
+    volumes:
+      - /opt/ominichat/vosk/model:/opt/vosk-model/model
+    environment:
+      - VOSK_SAMPLE_RATE=8000
+    networks:
+      minha_rede:
+        aliases:
+          - dialer-vosk
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  # --- LIVEKIT SIP GATEWAY (CO-LOCALIZADO COM ASTERISK NA PORTA 5062) ---
+  livekit-sip:
+    image: livekit/sip:latest
+    networks:
+      minha_rede:
+        aliases:
+          - livekit-sip
+    ports:
+      - target: 5062
+        published: 5062
+        protocol: udp
+        mode: host
+      - target: 5062
+        published: 5062
+        protocol: tcp
+        mode: host
+      - "11100-12000:11100-12000/udp"
+    volumes:
+      - /opt/ominichat/config/sip.yaml:/sip/config.yaml:ro
+    environment:
+      - SIP_CONFIG_FILE=/sip/config.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  dialer_redis_data:
+
+networks:
+  minha_rede:
+    external: true
+    name: minha_rede

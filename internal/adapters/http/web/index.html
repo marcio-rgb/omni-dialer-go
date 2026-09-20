@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dialer-Go | Painel de Controle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div id="app" class="app-layout">
+    <!-- Topbar Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="logo-badge">
+          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+          </svg>
+          <span class="brand-title">Dialer-Go</span>
+        </div>
+        <span id="mode-badge" class="mode-pill pill-dialer">MODO DIALER</span>
+      </div>
+
+      <!-- Live Connectivity Indicators -->
+      <div class="header-status">
+        <div class="status-chip" id="chip-ami" title="Status da Conexão Asterisk AMI">
+          <span class="dot-indicator dot-offline"></span>
+          <span class="chip-label">PBX AMI</span>
+        </div>
+        <div class="status-chip" id="chip-db" title="Status do Banco Relacional PostgreSQL">
+          <span class="dot-indicator dot-offline"></span>
+          <span class="chip-label">Banco</span>
+        </div>
+        <div class="status-chip" id="chip-cache" title="Status do Cache Redis">
+          <span class="dot-indicator dot-offline"></span>
+          <span class="chip-label">Cache</span>
+        </div>
+      </div>
+
+      <!-- Capacity & Tenant Controls -->
+      <div class="header-controls">
+        <div class="capacity-gauge" title="Capacidade Global de Canais">
+          <div class="gauge-meta">
+            <span class="gauge-title">Canais Ativos</span>
+            <span id="gauge-numbers" class="gauge-value">0 / 0</span>
+          </div>
+          <div class="gauge-track">
+            <div id="gauge-bar" class="gauge-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="tenant-selector">
+          <label for="tenant-input" class="tenant-label">Tenant</label>
+          <input type="text" id="tenant-input" class="tenant-field" value="default">
+        </div>
+
+        <button id="btn-refresh" class="btn btn-secondary" title="Atualizar dados">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span>Atualizar</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-trunks" id="tab-btn-trunks">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+        </svg>
+        <span>Troncos SIP</span>
+      </button>
+
+      <button class="tab-btn" data-tab="tab-configs" id="tab-btn-configs">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <span>Configurações PBX</span>
+      </button>
+
+      <button class="tab-btn" data-tab="tab-telemetry" id="tab-btn-telemetry">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <span>Telemetria</span>
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- TAB 1: TRUNKS -->
+      <section id="tab-trunks" class="tab-content active">
+        <!-- Summary Cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-caption">Total Troncos</span>
+            <span id="stat-total-trunks" class="stat-number">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-caption">Troncos Ativos</span>
+            <span id="stat-active-trunks" class="stat-number text-emerald">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-caption">Canais em Uso</span>
+            <span id="stat-used-channels" class="stat-number text-indigo">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-caption">Capacidade Máxima</span>
+            <span id="stat-total-channels" class="stat-number">0</span>
+          </div>
+        </div>
+
+        <!-- Trunks Action Bar -->
+        <div class="action-bar">
+          <div class="search-box">
+            <input type="text" id="trunk-search" class="search-input" placeholder="Filtrar por nome, número ou host...">
+          </div>
+          <div class="action-buttons">
+            <button id="btn-reload-trunks" class="btn btn-secondary" title="Recarregar troncos via AMI">
+              <span>Recarregar PBX</span>
+            </button>
+            <button id="btn-new-trunk" class="btn btn-primary" title="Adicionar novo tronco">
+              <span>Novo Tronco</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Trunks Table / Grid -->
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID / Nome</th>
+                <th>Número / CallerID</th>
+                <th>Tipo / Provedor</th>
+                <th>Host / Porta</th>
+                <th>Ocupação de Canais</th>
+                <th>Status</th>
+                <th class="text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="trunks-tbody">
+              <tr>
+                <td colspan="7" class="table-empty">Carregando troncos...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 2: CONFIGS (SIP_DATA EDITOR) -->
+      <section id="tab-configs" class="tab-content">
+        <div class="editor-layout">
+          <!-- File Selection Bar -->
+          <div class="editor-header">
+            <div class="file-tabs" id="config-file-tabs">
+              <button class="file-tab active" data-file="pjsip.conf">pjsip.conf</button>
+              <button class="file-tab" data-file="extensions.conf">extensions.conf</button>
+              <button class="file-tab" data-file="amd.conf">amd.conf</button>
+            </div>
+            <div class="editor-actions">
+              <button id="btn-save-config" class="btn btn-secondary">
+                <span>Salvar Arquivo</span>
+              </button>
+              <button id="btn-apply-config" class="btn btn-primary">
+                <span>Aplicar PBX</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Code Editor Area -->
+          <div class="editor-container">
+            <textarea id="config-editor" class="code-editor" spellcheck="false" placeholder="Carregando conteúdo do arquivo..."></textarea>
+          </div>
+
+          <!-- Apply / Reload Output Box -->
+          <div id="apply-output-card" class="console-card hidden">
+            <div class="console-header">
+              <span class="console-title">Resultado do Reload Asterisk</span>
+              <button id="btn-close-console" class="btn-icon-only">✕</button>
+            </div>
+            <pre id="apply-output-text" class="console-body"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: TELEMETRY -->
+      <section id="tab-telemetry" class="tab-content">
+        <div class="telemetry-grid">
+          <div class="telemetry-card">
+            <h3 class="card-heading">Informações do Runtime</h3>
+            <div class="info-list">
+              <div class="info-item">
+                <span class="info-key">Modo de Operação:</span>
+                <span id="tele-mode" class="info-val">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-key">Socket Asterisk AMI:</span>
+                <span id="tele-ami" class="info-val">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-key">Banco de Dados:</span>
+                <span id="tele-db" class="info-val">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-key">Cache Redis:</span>
+                <span id="tele-cache" class="info-val">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <h3 class="card-heading">Capacidade de Telefonia</h3>
+            <div class="info-list">
+              <div class="info-item">
+                <span class="info-key">Canais Globais Ativos:</span>
+                <span id="tele-active-chans" class="info-val text-indigo">0</span>
+              </div>
+              <div class="info-item">
+                <span class="info-key">Quota Humana Reservada:</span>
+                <span id="tele-human-quota" class="info-val">0</span>
+              </div>
+              <div class="info-item">
+                <span class="info-key">Canais Livres para Preditivo:</span>
+                <span id="tele-avail-chans" class="info-val text-emerald">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Trunk Edit / Create Modal -->
+    <div id="trunk-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title" class="modal-title">Novo Tronco</h3>
+          <button id="btn-close-modal" class="btn-icon-only">✕</button>
+        </div>
+        <form id="trunk-form" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trunk-id">ID do Tronco</label>
+              <input type="text" id="trunk-id" class="form-input" required placeholder="ex: vivo_01 ou sobreip">
+            </div>
+            <div class="form-group">
+              <label for="trunk-name">Nome Amigável</label>
+              <input type="text" id="trunk-name" class="form-input" required placeholder="ex: Vivo Tronco 01">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trunk-type">Tipo de Tronco</label>
+              <select id="trunk-type" class="form-select">
+                <option value="OUTBOUND">OUTBOUND (Saída)</option>
+                <option value="INBOUND">INBOUND (Entrada)</option>
+                <option value="BIDIRECTIONAL">BIDIRECTIONAL (Ambos)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="trunk-max-channels">Limite de Canais</label>
+              <input type="number" id="trunk-max-channels" class="form-input" value="30" min="1" max="1000">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trunk-host">Host / Servidor SIP</label>
+              <input type="text" id="trunk-host" class="form-input" placeholder="ex: metapabx.vivo.net.br">
+            </div>
+            <div class="form-group">
+              <label for="trunk-port">Porta SIP</label>
+              <input type="number" id="trunk-port" class="form-input" value="5060">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trunk-username">Usuário / Autenticação</label>
+              <input type="text" id="trunk-username" class="form-input" placeholder="ex: 1127011340">
+            </div>
+            <div class="form-group">
+              <label for="trunk-secret">Senha / Secret</label>
+              <input type="password" id="trunk-secret" class="form-input" placeholder="••••••••">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trunk-tech-prefix">Tech Prefix (Opcional)</label>
+              <input type="text" id="trunk-tech-prefix" class="form-input" placeholder="ex: 015 ou vazio">
+            </div>
+            <div class="form-group">
+              <label for="trunk-status">Status Inicial</label>
+              <select id="trunk-status" class="form-select">
+                <option value="ACTIVE">Ativo (Habilitado)</option>
+                <option value="INACTIVE">Inativo (Desabilitado)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" id="btn-cancel-modal" class="btn btn-secondary">Cancelar</button>
+            <button type="submit" id="btn-save-trunk" class="btn btn-primary">Salvar Tronco</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

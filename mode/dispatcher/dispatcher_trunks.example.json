@@ -1,0 +1,33 @@
+{
+  "description": "Catalogo de exemplo para os 60 troncos Vivo no modo Dispatcher",
+  "provider": "VIVO",
+  "server": "metapabx.vivo.net.br",
+  "total_trunks": 60,
+  "channels_per_trunk_default": 30,
+  "sample_trunks": [
+    {
+      "id": "vivo_01",
+      "name": "Vivo Tronco 01",
+      "number": "1127011340",
+      "username": "1127011340",
+      "max_channels": 30,
+      "enabled": true
+    },
+    {
+      "id": "vivo_02",
+      "name": "Vivo Tronco 02",
+      "number": "1127011341",
+      "username": "1127011341",
+      "max_channels": 30,
+      "enabled": true
+    },
+    {
+      "id": "vivo_60",
+      "name": "Vivo Tronco 60",
+      "number": "1127011399",
+      "username": "1127011399",
+      "max_channels": 30,
+      "enabled": true
+    }
+  ]
+}

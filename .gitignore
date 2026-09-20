@@ -1,0 +1,30 @@
+# Binaries
+/dialer
+/vosk-eagi
+/dialer-go
+/storage
+*.exe
+*.test
+
+# Heavy model files (stored externally or in storage)
+vosk-model/
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.ENV
+*.env
+.agents/*.ENV
+.agents/*.env
+.agents/servers.ENV
+config/sip.yaml
+!config/sip.example.yaml
+bin/

@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  dialer-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dialer-go-core
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    environment:
+      - PORT=8080
+      - OPERATION_MODE=${OPERATION_MODE:-dialer}
+      - DATABASE_URL=postgres://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiC@postgres-postgres-1:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=dialer-redis:6379
+      - REDIS_DB=0
+      - ASTERISK_AMI_HOST=host.docker.internal
+      - ASTERISK_AMI_PORT=5038
+      - ASTERISK_AMI_USER=dialer_admin
+      - ASTERISK_AMI_PASS=dialer_secret_ami
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16
+      - MAX_GLOBAL_CHANNELS=60
+      - HUMAN_RESERVED_QUOTA=10
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - dialer-redis
+      - dialer-vosk
+    networks:
+      - omnichat_network
+
+  dialer-redis:
+    image: redis:7-alpine
+    container_name: dialer-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - dialer-redisdata:/data
+    networks:
+      - omnichat_network
+
+  dialer-vosk:
+    image: alphacep/kaldi-vosk-server:latest
+    container_name: dialer-vosk
+    restart: unless-stopped
+    command: python3 /opt/vosk-server/websocket/asr_server.py /opt/vosk-model/model
+    ports:
+      - "2700:2700"
+    volumes:
+      - ./vosk-model:/opt/vosk-model/model
+    environment:
+      - VOSK_SAMPLE_RATE=8000
+    networks:
+      - omnichat_network
+
+  dialer-livekit-sip:
+    image: livekit/sip:latest
+    container_name: dialer-livekit-sip
+    restart: unless-stopped
+    ports:
+      - "5062:5062/udp"
+      - "5062:5062/tcp"
+      - "11100-12000:11100-12000/udp"
+    volumes:
+      - ./config/sip.example.yaml:/etc/sip.yaml:ro
+    environment:
+      - SIP_CONFIG_FILE=/etc/sip.yaml
+    networks:
+      - omnichat_network
+    profiles:
+      - livekit
+      - full
+
+volumes:
+  dialer-redisdata:
+
+networks:
+  omnichat_network:
+    external: true

@@ -1,0 +1,486 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"testing"
+	"time"
+
+	"dialer-go/internal/domain"
+)
+
+// mockCachePredictive implementa ports.CachePort para testes preditivos
+type mockCachePredictive struct {
+	queue []string
+}
+
+func (m *mockCachePredictive) GetWhitelistIPs(ctx context.Context) ([]string, error) { return nil, nil }
+func (m *mockCachePredictive) AddWhitelistIP(ctx context.Context, ip string) error   { return nil }
+func (m *mockCachePredictive) SetTrunkHealth(ctx context.Context, trunkID string, health domain.TrunkHealth, ttl time.Duration) error {
+	return nil
+}
+func (m *mockCachePredictive) GetTrunkHealth(ctx context.Context, trunkID string) (*domain.TrunkHealth, error) {
+	return &domain.TrunkHealth{Status: "ONLINE", MaxChannels: 50}, nil
+}
+func (m *mockCachePredictive) PushLeads(ctx context.Context, campaignID string, phoneList []string) error {
+	m.queue = append(m.queue, phoneList...)
+	return nil
+}
+func (m *mockCachePredictive) PopLead(ctx context.Context, campaignID string) (string, error) {
+	if len(m.queue) == 0 {
+		return "", nil
+	}
+	lead := m.queue[0]
+	m.queue = m.queue[1:]
+	return lead, nil
+}
+func (m *mockCachePredictive) GetQueueLength(ctx context.Context, campaignID string) (int64, error) {
+	return int64(len(m.queue)), nil
+}
+func (m *mockCachePredictive) SetCampaignPaused(ctx context.Context, campaignID string, paused bool) error {
+	return nil
+}
+func (m *mockCachePredictive) IsCampaignPaused(ctx context.Context, campaignID string) (bool, error) {
+	return false, nil
+}
+func (m *mockCachePredictive) SetInflatedSuccessRate(ctx context.Context, ttl time.Duration) error {
+	return nil
+}
+func (m *mockCachePredictive) HasInflatedSuccessRate(ctx context.Context) (bool, error) { return false, nil }
+func (m *mockCachePredictive) IncrementTrunkChannel(ctx context.Context, trunkID, channelID string) error { return nil }
+func (m *mockCachePredictive) DecrementTrunkChannel(ctx context.Context, trunkID, channelID string) error { return nil }
+func (m *mockCachePredictive) GetTrunkActiveChannelsCount(ctx context.Context, trunkID string) (int, error) { return 0, nil }
+func (m *mockCachePredictive) GetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string) (*domain.CallsSummaryResponse, time.Duration, error) { return nil, 0, nil }
+func (m *mockCachePredictive) SetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string, data *domain.CallsSummaryResponse, ttl time.Duration) error { return nil }
+func (m *mockCachePredictive) StoreAvailableAgents(ctx context.Context, campaignID string, agents []domain.AgentDemandDTO, ttl time.Duration) error { return nil }
+func (m *mockCachePredictive) GetNextAvailableAgent(ctx context.Context, campaignID string) (*domain.AgentDemandDTO, error) {
+	return &domain.AgentDemandDTO{AgentID: "agent-1", SIPRoute: "sala_agente_1"}, nil
+}
+func (m *mockCachePredictive) PopIdleAgent(ctx context.Context, timeout time.Duration) (*domain.AgentRedisData, error) {
+	return &domain.AgentRedisData{AgentID: "agent-1", LiveKitRoom: "sala_agente_1"}, nil
+}
+func (m *mockCachePredictive) PushIdleAgent(ctx context.Context, agent *domain.AgentRedisData) error { return nil }
+func (m *mockCachePredictive) RemoveAgentFromQueues(ctx context.Context, agentID string) error { return nil }
+func (m *mockCachePredictive) AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error) { return true, nil }
+func (m *mockCachePredictive) ReleaseRoomLock(ctx context.Context, roomName string) error { return nil }
+func (m *mockCachePredictive) PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error { return nil }
+
+
+
+func TestPredictiveEngine_CallerID_PreservesDialedNumber(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-1", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-1",
+			TenantID:    "tenant-test",
+			IsEnabled:   true,
+			Direction:   domain.DirectionOutbound,
+			MaxChannels: 50,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-1",
+		TenantID:       "tenant-test",
+		Mode:           domain.CampaignModePredictive,
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-1",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 10, available: 10}
+
+	testPhones := []string{"18988242441", "21999914324", "1133445566", "5518988242441"}
+
+	for _, phone := range testPhones {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  phone,
+			Name:   "Teste Lead",
+			CPF:    "12345678901",
+			LeadID: 1,
+		})
+		cache := &mockCachePredictive{
+			queue: []string{string(leadJSON)},
+		}
+
+		engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+		req := &domain.PredictiveDemandRequest{
+			TenantID:   "tenant-test",
+			CampaignID: "camp-1",
+			AvailableAgents: []domain.AgentDemandDTO{
+				{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+			},
+		}
+
+		_, err := engine.ProcessDemand(ctx, req)
+		if err != nil {
+			t.Fatalf("ProcessDemand falhou para %s: %v", phone, err)
+		}
+
+		if ami.lastCallerID != phone {
+			t.Errorf("CallerID deve ser estritamente o número discado: esperado %s, obtido %s", phone, ami.lastCallerID)
+		}
+	}
+}
+
+func TestPredictiveEngine_ProcessDemand_ZeroNormalization(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+
+	trunk := &domain.Trunk{
+		ID:               "trunk-vivo",
+		TenantID:         "tenant-test",
+		Name:             "Vivo SIP",
+		Direction:        domain.DirectionOutbound,
+		RegistrationMode: domain.RegistrationModeIPBased,
+		Host:             "metapabx.vivo.net.br",
+		Port:             5060,
+		MaxChannels:      50,
+		IsEnabled:        true,
+	}
+	trunks := &mockTrunkRepo{trunk: trunk}
+
+	campaign := &domain.Campaign{
+		ID:            "camp-1",
+		TenantID:      "tenant-test",
+		Mode:          domain.CampaignModePredictive,
+		Status:        domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:     "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	// Enfileira leads com 13 dígitos
+	lead13, _ := json.Marshal(domain.LeadQueueItem{
+		Phone:  "5521999914324",
+		Name:   "Maria DDI",
+		CPF:    "11122233344",
+		LeadID: 101,
+	})
+	cache := &mockCachePredictive{
+		queue: []string{string(lead13)},
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	req := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-1",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand falhou: %v", err)
+	}
+
+	if resp.DialingChannels < 1 {
+		t.Fatalf("esperava ao menos 1 canal disparado, obteve %d", resp.DialingChannels)
+	}
+
+	// Verifica se o canal gerado preserva rigorosamente o número com 55 (sem corte forçado)
+	expectedPhone := "5521999914324"
+	expectedDialPrefix := fmt.Sprintf("PJSIP/trunk-vivo/sip:%s@metapabx.vivo.net.br", expectedPhone)
+	if ami.lastChannel != expectedDialPrefix {
+		t.Errorf("lastChannel incorreto: esperado '%s', obtido '%s'", expectedDialPrefix, ami.lastChannel)
+	}
+
+	if ami.lastCallerID != expectedPhone {
+		t.Errorf("lastCallerID incorreto: esperado '%s', obtido '%s'", expectedPhone, ami.lastCallerID)
+	}
+	if ami.lastVars["PHONE"] != expectedPhone {
+		t.Errorf("PHONE var incorreta: esperado '%s', obtido '%s'", expectedPhone, ami.lastVars["PHONE"])
+	}
+	if ami.lastVars["__PHONE"] != expectedPhone {
+		t.Errorf("__PHONE var incorreta: esperado '%s', obtido '%s'", expectedPhone, ami.lastVars["__PHONE"])
+	}
+}
+
+func TestPredictiveEngine_DynamicAggressiveness(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+
+	trunk := &domain.Trunk{
+		ID:          "trunk-vivo",
+		TenantID:    "tenant-test",
+		Name:        "Vivo SIP",
+		Direction:   domain.DirectionOutbound,
+		MaxChannels: 50,
+		IsEnabled:   true,
+	}
+	trunks := &mockTrunkRepo{trunk: trunk}
+
+	// Campanha no banco com agressividade padrão 1.0
+	campaign := &domain.Campaign{
+		ID:             "camp-dyn",
+		TenantID:       "tenant-test",
+		Mode:           domain.CampaignModePredictive,
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	// 10 leads na fila
+	var leadBatch []string
+	for i := 1; i <= 10; i++ {
+		lead, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(lead))
+	}
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Com 1 agente e agressividade dinâmica de 2.0:
+	// rawChannels = (1 / 0.28) * (1 + 18/180) * 2.0 = 3.5714 * 1.1 * 2.0 = 7.857 -> ceil = 8
+	dynAgg := 2.0
+	req := &domain.PredictiveDemandRequest{
+		TenantID:       "tenant-test",
+		CampaignID:     "camp-dyn",
+		Aggressiveness: &dynAgg,
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand falhou: %v", err)
+	}
+
+	if resp.DialingChannels != 8 {
+		t.Fatalf("esperava 8 canais disparados com aggressiveness 2.0, obteve %d", resp.DialingChannels)
+	}
+}
+
+func TestPredictiveEngine_LeadNameOriginalAndAudioNameSlug(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-names",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 10, available: 10, dialed: 0}
+
+	leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+		Phone:     "5511999900001",
+		CPF:       "11122233344",
+		Name:      "MARCIO NASCIMENTO",
+		FirstName: "marcio",
+		WorkWord:  "governo_sp",
+		LeadID:    101,
+	})
+
+	cache := &mockCachePredictive{
+		queue: []string{string(leadJSON)},
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	req := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-names",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand falhou: %v", err)
+	}
+	if resp.DialingChannels != 1 {
+		t.Fatalf("esperava 1 canal disparado, obteve %d", resp.DialingChannels)
+	}
+
+	if ami.lastVars["LEAD_NAME"] != "MARCIO NASCIMENTO" {
+		t.Errorf("LEAD_NAME esperado 'MARCIO NASCIMENTO', obteve '%s'", ami.lastVars["LEAD_NAME"])
+	}
+	if ami.lastVars["AUDIO_NAME"] != "marcio" {
+		t.Errorf("AUDIO_NAME esperado 'marcio', obteve '%s'", ami.lastVars["AUDIO_NAME"])
+	}
+	if ami.lastVars["WORK_WORD"] != "governo_sp" {
+		t.Errorf("WORK_WORD esperado 'governo_sp', obteve '%s'", ami.lastVars["WORK_WORD"])
+	}
+}
+
+func TestPredictiveEngine_MinChannelsPerAgentFloor(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-floor",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	// Cria 20 leads na fila
+	var leadBatch []string
+	for i := 1; i <= 20; i++ {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(leadJSON))
+	}
+
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Valida default dinâmico = 2
+	if engine.GetMinChannelsPerAgent() != 2 {
+		t.Fatalf("esperava default de 2 canais por agente, obteve %d", engine.GetMinChannelsPerAgent())
+	}
+
+	// Configura dinamicamente para 7 canais por agente via SetMinChannelsPerAgent
+	engine.SetMinChannelsPerAgent(7)
+	if engine.GetMinChannelsPerAgent() != 7 {
+		t.Fatalf("esperava taxa configurada de 7 canais por agente, obteve %d", engine.GetMinChannelsPerAgent())
+	}
+
+	// Caso 1: 1 agente disponível -> Deve disparar no mínimo 7 chamadas (piso configurado 7:1)
+	req1 := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-floor",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+	resp1, err := engine.ProcessDemand(ctx, req1)
+	if err != nil {
+		t.Fatalf("ProcessDemand 1 agente falhou: %v", err)
+	}
+	if resp1.DialingChannels != 7 {
+		t.Fatalf("esperava piso de 7 canais disparados para 1 agente, obteve %d", resp1.DialingChannels)
+	}
+
+	// Caso 2: 2 agentes disponíveis -> Deve disparar no mínimo 14 chamadas (7 por agente)
+	// Recarrega leads na fila
+	cache.queue = leadBatch
+	req2 := &domain.PredictiveDemandRequest{
+		TenantID:   "tenant-test",
+		CampaignID: "camp-floor",
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+			{AgentID: "agent-2", SIPRoute: "sala_agente_2"},
+		},
+	}
+	resp2, err := engine.ProcessDemand(ctx, req2)
+	if err != nil {
+		t.Fatalf("ProcessDemand 2 agentes falhou: %v", err)
+	}
+	if resp2.DialingChannels != 14 {
+		t.Fatalf("esperava piso de 14 canais disparados para 2 agentes (7/agente), obteve %d", resp2.DialingChannels)
+	}
+}
+
+func TestPredictiveEngine_DynamicMinChannelsOverride(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cm := NewChannelManager(60, 10, nil)
+	cm.RegisterTrunkLimit("trunk-vivo", 50)
+	trunks := &mockTrunkRepo{
+		trunk: &domain.Trunk{
+			ID:          "trunk-vivo",
+			TenantID:    "tenant-test",
+			Host:        "metapabx.vivo.net.br",
+			MaxChannels: 50,
+			IsEnabled:   true,
+		},
+	}
+	campaign := &domain.Campaign{
+		ID:             "camp-override",
+		TenantID:       "tenant-test",
+		Status:         domain.CampaignStatusActive,
+		Aggressiveness: 1.0,
+		TrunkName:      "trunk-vivo",
+	}
+	campaigns := &mockCampaignRepo{camp: campaign}
+	leads := &mockLeadRepo{total: 100, available: 50, dialed: 50}
+
+	var leadBatch []string
+	for i := 1; i <= 20; i++ {
+		leadJSON, _ := json.Marshal(domain.LeadQueueItem{
+			Phone:  fmt.Sprintf("55119999000%02d", i),
+			Name:   fmt.Sprintf("Lead %d", i),
+			LeadID: int64(i),
+		})
+		leadBatch = append(leadBatch, string(leadJSON))
+	}
+
+	cache := &mockCachePredictive{
+		queue: leadBatch,
+	}
+
+	engine := NewPredictiveEngine(ami, cm, cache, campaigns, trunks, leads)
+
+	// Override dinâmico para 10 canais por agente no payload
+	minRatio10 := 10
+	req := &domain.PredictiveDemandRequest{
+		TenantID:            "tenant-test",
+		CampaignID:          "camp-override",
+		MinChannelsPerAgent: &minRatio10,
+		AvailableAgents: []domain.AgentDemandDTO{
+			{AgentID: "agent-1", SIPRoute: "sala_agente_1"},
+		},
+	}
+	resp, err := engine.ProcessDemand(ctx, req)
+	if err != nil {
+		t.Fatalf("ProcessDemand override falhou: %v", err)
+	}
+	if resp.DialingChannels != 10 {
+		t.Fatalf("esperava override de 10 canais disparados, obteve %d", resp.DialingChannels)
+	}
+}
+
+
