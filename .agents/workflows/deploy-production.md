@@ -1,230 +1,102 @@
 ---
-description: Agente Workflow de Deploy em Produção (Servidor Novo 84.247.135.255, Docker Swarm, Asterisk PBX & Dialer-Go)
+description: Procedimento canônico de deploy em produção do Dialer-Go via Git Forgejo, Control Plane e K3s.
 ---
 
-# Agente Workflow de Deploy em Produção (Production Deployment & Operations Specialist)
+# Deploy em Produção: Dialer-Go (Forgejo Git & K3s Control Plane)
 
-## 1. Escopo, Missão & Diretrizes de Produção
-
-O **Agente Workflow de Deploy em Produção** é a autoridade técnica responsável pela preparação, compilação, validação pré-flight, publicação e pós-verificação das atualizações do **Dialer-Go** (`go 1.25.0`), **Asterisk PBX**, **Redis** e **PostgreSQL (`dialer_db`)** no servidor de produção novo (`84.247.135.255`).
-
-### 1.1. Missão Central
-1. **Garantia de Zero Downtime & Zero Regressão:** Assegurar que nenhum deploy seja realizado sem prévia validação de testes unitários (`go test ./...`), conciliação de esquemas de banco e verificação de integridade SIP.
-2. **Defesa da Autonomia do Dialer-Go (Regra Canônica 4):** Garantir a soberania do discador sobre sua infraestrutura, mantendo os serviços desacoplados do sistema consumidor (OmniChat em `37.60.228.113`) e interoperando estritamente via APIs REST (RFC 7807) e Webhooks.
-3. **Resiliência e Monitoramento de Borda:** Garantir a ativação do listener de expirações Redis (`Keyspace Notifications Ex`) e verificação contínua dos canais de controle Asterisk AMI (`:5038`).
+Este workflow estabelece o procedimento operacional padrão para publicação e atualização em produção do microsserviço **`dialer-go`** no cluster K3s.
 
 ---
 
-## 2. Topologia de Infraestrutura do Servidor Novo
+## 1. Princípios Arquiteturais e Invariantes
 
-```mermaid
-graph TD
-    subgraph HostProd["Servidor Novo de Produção (84.247.135.255)"]
-        subgraph Swarm["Docker Swarm / Stack dialer-go"]
-            DialerApp["Dialer-Go Engine (Porta Host 8081)"]
-            PostgresDB["PostgreSQL dialer_db (Porta 5432)"]
-            RedisCache["Redis Cache DB 0 (Porta 6379)"]
-            AsteriskPBX["Asterisk PBX (PJSIP 5060 / AMI :5038)"]
-            LiveKitSIP["LiveKit SIP Gateway (Porta Host 5062)"]
-            ClassificatorRouter["Classificator Router (:2800)"]
-            VoskEAGI["vosk-eagi Thin Client"]
-        end
-    end
-
-    subgraph ExternalConsumers["Ecossistemas Consumidores"]
-        OmniChat["OmniChat Backend (37.60.228.113)"]
-        LiveKitServer["LiveKit Media Server Core (Servidor 1)"]
-        TelephonyTrunks["Troncos SIP Externos (Vivo, RVX, SobreIP)"]
-    end
-
-    DialerApp -->|pgx/v5 Pool| PostgresDB
-    DialerApp -->|go-redis/v9 + PubSub| RedisCache
-    DialerApp -->|AMI TCP Socket :5038| AsteriskPBX
-    AsteriskPBX -->|EAGI FD 3| VoskEAGI
-    VoskEAGI -->|WebSocket :2800| ClassificatorRouter
-    
-    OmniChat -->|HTTP GET / POST :8081| DialerApp
-    DialerApp -->|Webhooks HTTP| OmniChat
-    AsteriskPBX <-->|PJSIP / Loopback RTP :5062| LiveKitSIP
-    LiveKitSIP <-->|WebRTC SRTP / QoS| LiveKitServer
-    AsteriskPBX <-->|SIP INVITE / RTP| TelephonyTrunks
-```
-
-### 2.1. Matriz de Endereçamento e Portas
-| Serviço | Host / Container | Porta Interna | Porta Exposta (Host) | Protocolo |
-| :--- | :--- | :---: | :---: | :--- |
-| **Dialer-Go API** | `dialer-go_dialer-go` | `8080` | **`8081`** | HTTP / REST |
-| **PostgreSQL (`dialer_db`)** | `dialer-go_postgres` | `5432` | `5432` | TCP (PostgreSQL) |
-| **Redis Cache** | `dialer-go_redis` | `6379` | `6379` | TCP (Redis) |
-| **Asterisk AMI** | `dialer-go_asterisk` | `5038` | `5038` | TCP (AMI Socket) |
-| **Asterisk PJSIP** | `dialer-go_asterisk` | `5060` | `5060` | UDP / SIP |
-| **LiveKit-SIP Gateway** | `dialer-go_livekit-sip` | `5062` | `5062` | UDP / TCP (SIP Loopback) |
-| **LiveKit-SIP RTP** | `dialer-go_livekit-sip` | `11100-12000` | `11100-12000` | UDP (RTP Media) |
-| **Classificator Router** | `dialer-go_classificator-router` | `2800` | `2800` | TCP / WebSocket |
+1. **Zero Deploy Manual via Portainer/SSH:** É terminantemente proibido utilizar Portainer, Docker Swarm ou comandos soltos via SSH para deploys em produção. Todas as ordens são emitidas para a API do **Control Plane** (`POST /api/v1/deploys`).
+2. **Exclusão de Artefatos do Portainer:** Os scripts `deploy_github_portainer.js`, `deploy_github_portainer.sh` e `deploy_local_portainer.js` estão **descontinuados e devem ser excluídos/ignorados**.
+3. **Alocação Topológica Determinística:** O `dialer-go` executa exclusivamente no **Node Master** (`dialer-new` - `84.247.135.255`), usufruindo de latência ultra-baixa de loopback com o Asterisk PBX e o banco `dialer_db`.
+4. **Injeção Segura via Secret Vault:** Senhas de AMI, Asterisk e banco de dados trafegam exclusivamente em memória via Secret Vault (AES-256-GCM).
+5. **Rastreabilidade Git Forgejo:** Qualquer deploy em produção deve ter origem em commit auditado na branch `main` do Git Forgejo.
 
 ---
 
-## 3. Protocolo Pre-Flight Mandatório (Funil Anti-Sobrescrita)
+## 2. Etapa 1: Validação Pré-Flight e Push no Git Forgejo
 
-Antes de executar o deploy no servidor novo, a IA/Desenvolvedor DEVE obrigatoriamente executar o funil em 4 etapas:
-
-### 3.1. Etapa 1: Sincronização Git (`Pre-Flight Git`)
+Antes de emitir a ordem de deploy:
 ```bash
-# 1. Validar se o workspace local está limpo
+# 1. Validar integridade dos testes de unidade
+cd /home/marcio/ecosystem/dialer-go
+go test -v ./...
+
+# 2. Sincronizar com o Forgejo
 git status
+git fetch forgejo
+git pull --rebase forgejo main
 
-# 2. Buscar atualizações remotas e rebasar na branch main
-git fetch origin
-git pull --rebase origin main
-```
-
-### 3.2. Etapa 2: Execução dos Testes Unitários Go
-```bash
-# Executar a suíte completa de testes com variável PATH configurada
-export PATH=$PATH:/home/marcio/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.0.linux-amd64/bin:/snap/antigravity-cli/21/usr/lib/go-1.22/bin
-go test ./...
-```
-> [!CAUTION]
-> **Bloqueio Absoluto:** Se qualquer teste falhar, o deploy deve ser **interrompido imediatamente**. É proibido publicar código com testes falhando ou ignorar erros de compilação.
-
-### 3.3. Etapa 3: Validação de Esquema SQL (`dialer_db`)
-Garantir que as tabelas de suporte (`tenants`, `leads`, `cdrs`, `campaigns`, `trunks`, `sip_data`) estejam com a estrutura reconciliada:
-- Colunas `att1`, `att2`, `att3` presentes na tabela `leads`.
-- Tabela `tenants` contendo o registro tenant `'default'` e webhook configurado.
-- Tipos de colunas ID usando `VARCHAR`/`TEXT` (sem tipo PostgreSQL `UUID` estrito).
-
-### 3.4. Etapa 4: Contrato de Variáveis de Ambiente (`servers.ENV` / `.env`)
-Verificar a presença das variáveis no `.env` do servidor novo:
-```ini
-APP_PORT=8080
-DATABASE_URL=postgres://dialeruser:dialerpass123@postgres:5432/dialer_db?sslmode=disable
-REDIS_ADDR=redis:6379
-REDIS_PASSWORD=
-REDIS_DB=0
-ASTERISK_AMI_HOST=asterisk
-ASTERISK_AMI_PORT=5038
-ASTERISK_AMI_USER=dialeradmin
-ASTERISK_AMI_PASS=dialerpass123
-WEBHOOK_URL=http://37.60.228.113:3000/api/telephony/webhook/call-ended
-INITIAL_WHITELIST_IPS=127.0.0.1,37.60.228.113,84.247.135.255,10.0.1.0/24,*
+# 3. Enviar alterações validadas para o Forgejo
+git push forgejo main
 ```
 
 ---
 
-## 4. Orquestração Sequencial do Deploy em Produção
+## 3. Etapa 2: Consulta de Integridade no Control Plane
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Dev as IA / Engenheiro DevOps
-    participant Git as Git Repo (main)
-    participant Host as Servidor Novo (84.247.135.255)
-    participant Swarm as Docker Swarm Stack
-    participant Dialer as Container dialer-go
-    participant Asterisk as Container Asterisk
-
-    Dev->>Git: git push origin main
-    Dev->>Host: SSH / Deploy Trigger na máquina 84.247.135.255
-    Host->>Swarm: docker service update --image ou docker compose build & up -d
-    Swarm->>Dialer: Reinicia container dialer-go graciosamente
-    Dialer->>Dialer: Executa Boot Check (PostgreSQL, Redis Keyspace Ex, AMI Socket)
-    Dev->>Dialer: GET http://84.247.135.255:8081/health
-    Dialer-->>Dev: 200 OK {"status":"healthy"}
-    Dev->>Dialer: POST /api/v1/configs/apply?reload_ami=true
-    Dialer->>Asterisk: AMI Command: pjsip reload & dialplan reload
-    Asterisk-->>Dialer: Configurações aplicadas com sucesso
-```
-
-### 4.1. Comandos de Atualização no Servidor Novo
-
+Verifique se o serviço está registrado e sem colisões no catálogo do cluster:
 ```bash
-# Navegar até o diretório do projeto no servidor novo
-cd /home/marcio/ominichat/dialer-go
-
-# Pull do código comita da branch main
-git pull origin main
-
-# Rebuild e atualização do serviço no Docker Swarm / Compose
-docker compose build dialer-go
-docker compose up -d dialer-go
+curl -s http://localhost:3100/api/v1/discovery/dialer-go | jq
 ```
+*Critério de Sucesso:* `serviceId: "dialer-go"`, `assigned_node: "node-master"`, status `ACTIVE`.
 
 ---
 
-## 5. Validação Pós-Deploy e Telemetria em Tempo Real
+## 4. Etapa 3: Ordem de Deploy via Control Plane API
 
-Após o disparo da atualização, execute o checklist de verificação de borda:
-
-### 5.1. Validação do Endpoint de HealthCheck
+Dispare a ordem de publicação em produção:
 ```bash
-curl -s http://84.247.135.255:8081/health | jq .
+curl -X POST http://localhost:3100/api/v1/deploys \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceId": "dialer-go",
+    "environment": "production",
+    "imageTag": "latest"
+  }' | jq
 ```
-**Resposta Esperada (`200 OK`):**
+
+**Retorno Esperado:**
 ```json
 {
-  "status": "healthy",
-  "components": {
-    "postgres": "connected",
-    "redis": "connected",
-    "ami": "connected"
-  }
+  "id": "dep-dialer-...",
+  "serviceId": "dialer-go",
+  "environment": "production",
+  "status": "HEALTHY",
+  "nodeId": "node-master",
+  "port": 8080
 }
 ```
 
-### 5.2. Validação da Escuta de Mortes Silenciosas no Redis (Keyspace Events)
-Inspecione os logs do container em tempo real:
-```bash
-docker logs --tail 50 dialer-go_dialer-go
-```
-**Log Obrigatório:**
-```text
-[INFO] Keyspace Notifications (Ex) ativadas com sucesso no Redis.
-[INFO] Escutando quedas de conexão de agentes (Expirações) no canal Redis: __keyevent@0__:expired
-```
-
-### 5.3. Aplicação Segura de Configurações do Asterisk (`sip_data`)
-```bash
-curl -X POST "http://84.247.135.255:8081/api/v1/configs/apply?reload_ami=true" -H "X-Tenant-Id: default"
-```
-
-### 5.4. Verificação de Inbound Trunk e Dispatch Rule no LiveKit Server
-Para evitar o erro `486 Busy Here (reason: "flood")` na entrega de chamadas aos agentes:
-```bash
-# 1. Verificar se o Inbound Trunk existe para o IP do Asterisk
-lk sip inbound list --url wss://live.creditobr.org --api-key devkey --api-secret secret
-
-# 2. Se necessário, criar o trunk para o Asterisk
-echo '{"trunk":{"name":"Asterisk-Dialer","allowed_addresses":["84.247.135.255/32","127.0.0.1/32","172.16.0.0/12","10.0.0.0/8"]}}' | \
-  lk sip inbound create --url wss://live.creditobr.org --api-key devkey --api-secret secret -
-
-# 3. Criar a regra de despacho dinâmico de callee para as salas
-echo '{"dispatch_rule":{"name":"Asterisk-Dispatch","trunk_ids":["<TRUNK_ID>"],"rule":{"dispatch_rule_callee":{"room_prefix":"","pin":"","randomize":false}}}}' | \
-  lk sip dispatch create --url wss://live.creditobr.org --api-key devkey --api-secret secret -
-```
-
 ---
 
-## 6. Protocolo de Rollback & Resolução de Erros (Fail-Fast Rule 0.7)
+## 5. Etapa 4: Validação Pós-Deploy
 
-Em caso de falha de conexão com o banco, queda do socket AMI ou recusa de chamadas no PBX:
-
-1. **Notificação Detalhada na UI / Logs:** Interromper imediatamente o deploy e emitir o erro estruturado contendo:
-   - **Local / Tela:** *Administração -> Servidores -> Discador Dialer-Go*.
-   - **Informação Necessária:** Nome exato da variável ou porta indisponível (ex: `ASTERISK_AMI_PORT` na porta `5038`).
-   - **Como Corrigir:** Instrução prática de resolução e exemplos reais.
-
-2. **Comando de Rollback Imediato:**
+Execute o checklist operacional:
+1. **Liveness Probe e Telemetria HTTP (RFC 7807):**
    ```bash
-   # Reverter para o commit/imagem anterior estável
-   git reset --hard HEAD~1
-   docker compose up -d --build dialer-go
+   curl -s http://84.247.135.255:8080/api/v1/health | jq
    ```
+   *Critério de Sucesso:* Status `200` com `database: UP`, `redis: UP`, `ami: CONNECTED`.
+
+2. **Qualify de Troncos SIP:**
+   ```bash
+   curl -s http://84.247.135.255:8080/api/v1/trunks | jq
+   ```
+   *Critério de Sucesso:* Lista de troncos cadastrados respondendo status de qualify ativo.
 
 ---
 
-## 7. Governança e Manutenção Sincronizada
+## 6. Procedimento de Rollback Imediato
 
-Toda alteração efetuada durante o deploy exige a atualização em cadeia dos arquivos mestre:
-1. **API Reference:** Atualizar [`.agents/workflows/API_REFERENCE.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/API_REFERENCE.md) caso rotas ou DTOs tenham sido modificados.
-2. **Grafo Mestre:** Atualizar o documento [`.agents/ARCHITECT.md`](file:///home/marcio/ominichat/dialer-go/.agents/ARCHITECT.md) e a matriz de workflows.
-3. **Padrão Telefônico:** Manter gravações Dual-Channel Stereo WAV 8kHz com mesclagem `merge-stereo` assíncrona para MP3.
+Se houver qualquer instabilidade na nova versão:
+```bash
+curl -X POST http://localhost:3100/api/v1/deploys/dialer-go/rollback \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq
+```
+O Control Plane restaura atomicamente a última revisão saudável.

@@ -220,8 +220,8 @@ graph TD
 | Arquivo | Responsabilidade |
 | :--- | :--- |
 | [`.agents/workflows/deploy-local.md`](file:///home/marcio/ecosystem/dialer-go/.agents/workflows/deploy-local.md) | Manual operacional e checklist de deploy no Portainer Local e Docker Compose Local. |
-| [`deploy_local_portainer.js`](file:///home/marcio/ecosystem/dialer-go/deploy_local_portainer.js) | Script de automação para criação/atualização da stack `dialer-go` no Portainer Local em modo texto/string. |
-| [`deploy_github_portainer.js`](file:///home/marcio/ecosystem/dialer-go/deploy_github_portainer.js) | Script de automação de CI/CD para deploy da stack de produção via Portainer Swarm. |
+| [`deploy_local_portainer.js`](file:///home/marcio/ecosystem/dialer-go/deploy_local_portainer.js) | *(DESCONTINUADO / EXCLUIR)* Script legado de deploy em Portainer Local. Substituído pelo Control Plane K3s. |
+| [`deploy_github_portainer.js`](file:///home/marcio/ecosystem/dialer-go/deploy_github_portainer.js) | *(DESCONTINUADO / EXCLUIR)* Script legado de deploy via Portainer. Substituído pelo Control Plane K3s. |
 | [`.agents/workflows/deploy-production.md`](file:///home/marcio/ecosystem/dialer-go/.agents/workflows/deploy-production.md) | Orquestração e checklist de deploy em produção (Servidor 84.247.135.255, Docker Swarm Stack). |
 | [`.agents/workflows/agente-audit-processo.md`](file:///home/marcio/ecosystem/dialer-go/.agents/workflows/agente-audit-processo.md) | Agente de Teste, Auditoria Ponta a Ponta & Controle de Quebra de Processo. |
 | [`.agents/workflows/agente-go-especialista.md`](file:///home/marcio/ecosystem/dialer-go/.agents/workflows/agente-go-especialista.md) | Agente Especialista em Engenharia Go 1.25, Arquitetura Hexagonal e Contratos Canônicos. |

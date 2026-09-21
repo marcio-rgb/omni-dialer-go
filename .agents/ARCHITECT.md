@@ -108,7 +108,8 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
 - **Cache Rápido e Filas:** Redis 7 Alpine (`github.com/redis/go-redis/v9`).
 - **Armazenamento de Objetos (Mailings):** MinIO S3 API (`github.com/minio/minio-go/v7`).
 - **Síntese de Nomes Prévia (TTS Offline):** Piper TTS pt-BR CLI (`internal/adapters/tts/piper_adapter.go`).
-- **Contêineres e Deploy:** Docker, Docker Compose e orquestração via Portainer com Traefik Reverse Proxy.
+- **Controle de Versão (VCS):** Git Forgejo interno (NodePort 30080 HTTP / 30222 SSH).
+- **Orquestração e Deploy:** K3s (Rancher) via Control Plane API (:3100) e Secret Vault (AES-256-GCM). Artefatos e deploys via Portainer/Swarm estão formalmente proibidos e descontinuados.
 
 ---
 
