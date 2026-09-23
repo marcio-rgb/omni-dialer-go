@@ -135,36 +135,72 @@ window.App = (function () {
     if (!res.ok) return;
     state.trunks = res.data?.data?.trunks || [];
     el.statTotalTrunks.textContent = state.trunks.length;
-    el.statActiveTrunks.textContent = state.trunks.filter(t => (t.Trunk?.Status || t.status) === 'ACTIVE').length;
+    el.statActiveTrunks.textContent = state.trunks.filter(t => t.is_enabled && t.health?.status === 'ONLINE').length;
+    el.statUsedChannels.textContent = state.trunks.reduce((acc, t) => acc + (t.health?.active_channels || 0), 0);
+    el.statTotalChannels.textContent = state.trunks.reduce((acc, t) => acc + (t.max_channels || 0), 0);
     renderTrunks();
   }
 
   function renderTrunks() {
     const filter = (el.trunkSearch.value || '').toLowerCase().trim();
-    const list = state.trunks.filter(item => {
-      const t = item.Trunk || item;
-      return (t.ID || '').toLowerCase().includes(filter) || (t.Name || '').toLowerCase().includes(filter);
+    const list = state.trunks.filter(t => {
+      return (t.id || '').toLowerCase().includes(filter) ||
+             (t.name || '').toLowerCase().includes(filter) ||
+             (t.host || '').toLowerCase().includes(filter);
     });
     if (list.length === 0) {
       el.trunksTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-stone-500); padding: 2rem;">Nenhum tronco encontrado.</td></tr>`;
       return;
     }
-    el.trunksTbody.innerHTML = list.map(item => {
-      const t = item.Trunk || item;
-      const ch = item.LiveChannels || 0;
-      const max = t.MaxChannels || 30;
+    el.trunksTbody.innerHTML = list.map(t => {
+      const activeCh = t.health?.active_channels || 0;
+      const maxCh = t.max_channels || 30;
+      const callerId = t.tech_prefix || t.from_user || t.auth_username || '-';
+      const transport = t.transport || 'UDP';
+      const isOnline = t.health?.status === 'ONLINE';
+      const latency = t.health?.latency_ms ? `${Math.round(t.health.latency_ms)}ms` : '';
+
+      let statusHtml = '';
+      if (!t.is_enabled) {
+        statusHtml = `<span class="status-badge neutral"><span class="status-dot" style="background-color: var(--text-stone-500);"></span><span>Desativado</span></span>`;
+      } else if (isOnline) {
+        statusHtml = `<span class="status-badge online"><span class="status-dot pulse" style="background-color: var(--emerald-400);"></span><span>Online ${latency}</span></span>`;
+      } else {
+        statusHtml = `<span class="status-badge offline"><span class="status-dot" style="background-color: var(--rose-400);"></span><span>${t.health?.status || 'Offline'}</span></span>`;
+      }
+
       return `
         <tr>
-          <td><strong style="color: var(--text-stone-100);">${t.Name || t.ID}</strong><br><span style="font-size: 0.6875rem; color: var(--text-stone-500);">${t.ID}</span></td>
-          <td>${t.AuthUsername || '-'}</td>
-          <td>${t.Transport || 'UDP'}</td>
-          <td><code>${t.Host}:${t.Port}</code></td>
-          <td>${ch} / ${max}</td>
-          <td><span class="status-badge ${t.IsEnabled ? 'online' : 'offline'}">${t.IsEnabled ? 'Ativo' : 'Inativo'}</span></td>
-          <td style="text-align: right;"><button class="btn-ghost" data-del-trunk="${t.ID}"><i class="pi pi-trash"></i></button></td>
+          <td>
+            <strong style="color: var(--text-stone-100); font-family: var(--font-display);">${t.name || t.id}</strong><br>
+            <span style="font-size: 0.6875rem; color: var(--text-stone-500); font-family: var(--font-mono);">${t.id}</span>
+          </td>
+          <td>${callerId}</td>
+          <td><span class="mode-pill dispatcher" style="font-size: 0.5625rem;">${transport}</span></td>
+          <td><code style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-stone-300);">${t.host}:${t.port || 5060}</code></td>
+          <td><span style="font-family: var(--font-mono);">${activeCh} / ${maxCh}</span></td>
+          <td>${statusHtml}</td>
+          <td style="text-align: right;">
+            <button class="btn-ghost" data-del-trunk="${t.id}" title="Excluir tronco">
+              <i class="pi pi-trash" style="color: var(--text-stone-400);"></i>
+            </button>
+          </td>
         </tr>
       `;
     }).join('');
+
+    $$('[data-del-trunk]').forEach(btn => {
+      btn.onclick = async () => {
+        const trunkId = btn.getAttribute('data-del-trunk');
+        const res = await apiCall(`/api/v1/trunks/${trunkId}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast('Tronco removido', 'success');
+          fetchTrunks();
+        } else {
+          showToast(`Erro ao remover: ${res.data?.detail || ''}`, 'error');
+        }
+      };
+    });
   }
 
   // --- Configurações PBX ---
@@ -258,6 +294,33 @@ window.App = (function () {
     el.btnNewTrunk.onclick = () => { el.trunkModal.style.display = 'flex'; };
     el.btnCloseModal.onclick = () => { el.trunkModal.style.display = 'none'; };
     el.btnCancelModal.onclick = () => { el.trunkModal.style.display = 'none'; };
+
+    el.trunkForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        id: $('trunk-id').value.trim(),
+        name: $('trunk-name').value.trim(),
+        host: $('trunk-host').value.trim(),
+        port: parseInt($('trunk-port').value, 10) || 5060,
+        max_channels: parseInt($('trunk-max-channels').value, 10) || 30,
+        direction: 'BIDIRECTIONAL',
+        registration_mode: 'IP_BASED',
+        transport: 'UDP',
+        is_enabled: true
+      };
+      const res = await apiCall('/api/v1/trunks', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        showToast('Tronco salvo', 'success');
+        el.trunkModal.style.display = 'none';
+        el.trunkForm.reset();
+        fetchTrunks();
+      } else {
+        showToast(`Erro ao salvar: ${res.data?.detail || ''}`, 'error');
+      }
+    };
 
     el.btnSaveConfig.onclick = saveConfigFile;
     el.btnApplyConfig.onclick = applyConfigs;
