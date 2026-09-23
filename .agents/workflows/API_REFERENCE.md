@@ -87,6 +87,12 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `PUT` | `/api/v1/configs/{file}` | Atualiza o conteúdo de um arquivo `.conf` na tabela `sip_data` | Whitelist + JSON Body |
 | `POST` | `/api/v1/configs/apply` | Aplica os arquivos de `sip_data` em disco (`/etc/asterisk`) e recarrega via AMI | Whitelist + JSON Body |
 | `DELETE`| `/api/v1/configs/{file}` | Remove um arquivo de configuração da tabela `sip_data` | Whitelist |
+| `GET` | `/api/v1/instances` | Lista nós Go (Dialer e Dispatcher) com filtro por modo | Whitelist + `X-Tenant-Id` |
+| `POST` | `/api/v1/instances` | Cadastra nova instância de Dialer ou Dispatcher | Whitelist + JSON Body |
+| `GET` | `/api/v1/instances/{id}` | Recupera dados de uma instância específica | Whitelist + `X-Tenant-Id` |
+| `PUT` | `/api/v1/instances/{id}` | Atualiza parâmetros operacionais da instância | Whitelist + JSON Body |
+| `DELETE`| `/api/v1/instances/{id}` | Remove uma instância do catálogo | Whitelist + `X-Tenant-Id` |
+| `POST` | `/api/v1/instances/{id}/ping` | Executa teste de conectividade e capacidade HTTP (/health) | Whitelist + `X-Tenant-Id` |
 
 ---
 
@@ -104,7 +110,8 @@ Endpoint público de monitoramento e liveness probe (Kubernetes / Docker Swarm).
   "components": {
     "asterisk_ami": true,
     "database": true,
-    "cache": true
+    "cache": true,
+    "livekit_sip": true
   },
   "telephony_capacity": {
     "active_global_channels": 18,
@@ -1361,6 +1368,8 @@ Sempre que uma chamada preditiva tem seu atendimento humano confirmado (`Predict
 
 - **Fila Global:** `dialer:answered_leads`
 - **Fila Específica da Campanha:** `dialer:answered_leads:<campaign_id>`
+- **Fila Segregada por Tenant (Multi-Tenant):** `dialer:answered_leads:tenant:<tenant_id>`
+- **Canal Pub/Sub por Tenant (Tempo Real):** `dialer:events:answered:<tenant_id>`
 
 #### Payload do Evento (`domain.AnsweredLeadEvent`):
 ```json
@@ -1387,4 +1396,75 @@ Sempre que uma chamada preditiva tem seu atendimento humano confirmado (`Predict
   "timestamp": 1789743600
 }
 ```
+
+---
+
+## 6. Gestão de Instâncias Go (`/api/v1/instances`)
+
+### 6.1. Listar Instâncias (`GET /api/v1/instances`)
+- **Query Params:** `mode` (opcional: `dialer` ou `dispatcher`), `tenant_id` (opcional).
+- **Resposta (`200 OK`):**
+```json
+{
+  "instances": [
+    {
+      "id": "dialer-cloud",
+      "tenant_id": "default",
+      "name": "Nuvem Principal",
+      "mode": "dialer",
+      "host_url": "http://localhost:8081",
+      "max_channels": 30,
+      "is_active": true,
+      "description": "Nó central de inteligência e discagem",
+      "created_at": "2026-09-23T03:00:00Z",
+      "updated_at": "2026-09-23T03:00:00Z"
+    },
+    {
+      "id": "dispatcher-escritorio",
+      "tenant_id": "default",
+      "name": "Escritório Vivo",
+      "mode": "dispatcher",
+      "host_url": "http://100.123.144.122:8081",
+      "max_channels": 11,
+      "is_active": true,
+      "description": "Gateway de 11 ramais Vivo MetaPBX",
+      "created_at": "2026-09-23T03:00:00Z",
+      "updated_at": "2026-09-23T03:00:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+### 6.2. Cadastrar Instância (`POST /api/v1/instances`)
+- **Headers:** `Content-Type: application/json`, `X-Tenant-Id`
+- **Request Body:**
+```json
+{
+  "id": "dispatcher-escritorio",
+  "name": "Escritório Vivo",
+  "mode": "dispatcher",
+  "host_url": "http://100.123.144.122:8081",
+  "max_channels": 11,
+  "is_active": true,
+  "description": "Gateway de 11 ramais Vivo MetaPBX"
+}
+```
+- **Resposta (`201 Created`):** Retorna o objeto da instância criada.
+
+### 6.3. Teste de Conectividade em Tempo Real (`POST /api/v1/instances/{id}/ping`)
+- Executa verificação ativa contra o `/health` do nó remoto com timeout de 3s e captura de canais ativos.
+- **Resposta (`200 OK`):**
+```json
+{
+  "instance_id": "dispatcher-escritorio",
+  "mode": "dispatcher",
+  "status": "online",
+  "latency_ms": 14,
+  "active_channels": 4,
+  "max_channels": 11,
+  "checked_at": "2026-09-23T03:30:00Z"
+}
+```
+
 

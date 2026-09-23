@@ -13,6 +13,7 @@ import (
 	"dialer-go/config"
 	"dialer-go/internal/adapters/ami"
 	httpAdapter "dialer-go/internal/adapters/http"
+	"dialer-go/internal/adapters/livekit"
 	"dialer-go/internal/adapters/postgres"
 	redisAdapter "dialer-go/internal/adapters/redis"
 	"dialer-go/internal/adapters/storage"
@@ -43,6 +44,11 @@ func main() {
 	defer pgPool.Close()
 	log.Println("[INFO] PostgreSQL dialer_db conectado.")
 
+	// 2.1. Executa auto-migração de schema e auto-seed idempotente no banco relacional
+	if err := postgres.AutoMigrateSchema(ctx, pgPool); err != nil {
+		log.Printf("[WARN] Falha durante auto-migração do schema: %v", err)
+	}
+
 	// 3. Conecta ao Asterisk PBX (AMI TCP Socket)
 	amiClient := ami.NewAMIClient(cfg.AsteriskAMIHost, cfg.AsteriskAMIPort, cfg.AsteriskAMIUser, cfg.AsteriskAMIPass)
 	if err := amiClient.Connect(ctx); err != nil {
@@ -56,6 +62,13 @@ func main() {
 	// 4. Repositórios base
 	trunkRepo := postgres.NewTrunkRepo(pgPool)
 	sipConfigRepo := postgres.NewSIPConfigRepo(pgPool)
+	instanceRepo := postgres.NewInstanceRepo(pgPool)
+	instanceService := core.NewInstanceService(instanceRepo)
+	instanceHandler := httpAdapter.NewInstanceHandler(instanceService)
+
+	// 5. Adaptador LiveKit SIP (Auto-provisionamento, Reconciliação Contínua e Telemetria)
+	livekitClient := livekit.NewClient(cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
+	livekitClient.StartReconciler(ctx, 30*time.Second)
 
 	sipConfigMgr := core.NewSIPConfigManager(sipConfigRepo, cfg.ConfigSeedDir)
 	sipConfigMgr.SeedFromDiskIfEmpty(ctx)
@@ -71,11 +84,15 @@ func main() {
 		trunkMgr.StartDaemon(ctx)
 		defer trunkMgr.Stop()
 
+		healthHandler := httpAdapter.NewHealthHandler(pgPool, nil, amiClient, channelMgr)
+		healthHandler.SetLiveKitPort(livekitClient)
+
 		handlersConfig = httpAdapter.HandlersConfig{
 			WhitelistMiddleware: whitelist,
 			Trunk:               httpAdapter.NewTrunkHandler(trunkRepo, nil, trunkMgr, channelMgr, amiClient),
-			Health:              httpAdapter.NewHealthHandler(pgPool, nil, amiClient, channelMgr),
+			Health:              healthHandler,
 			SIPConfig:           sipConfigHandler,
+			Instance:            instanceHandler,
 		}
 	} else {
 		// Modo DIALER Completo (Padrão)
@@ -136,6 +153,9 @@ func main() {
 		amdHandler := httpAdapter.NewAMDHandler(amdConfigMgr, amiClient)
 		leadBatchHandler := httpAdapter.NewLeadBatchHandler(leadRepo, cache, audioWordMgr)
 
+		healthHandler := httpAdapter.NewHealthHandler(pgPool, cache, amiClient, channelMgr)
+		healthHandler.SetLiveKitPort(livekitClient)
+
 		handlersConfig = httpAdapter.HandlersConfig{
 			WhitelistMiddleware: whitelist,
 			Predictive:          httpAdapter.NewPredictiveHandler(predictiveEngine),
@@ -146,11 +166,12 @@ func main() {
 			Saturation:          httpAdapter.NewSaturationHandler(saturationService),
 			Report:              httpAdapter.NewReportHandler(reportRepo, cache),
 			Trunk:               httpAdapter.NewTrunkHandler(trunkRepo, cache, trunkMgr, channelMgr, amiClient),
-			Health:              httpAdapter.NewHealthHandler(pgPool, cache, amiClient, channelMgr),
+			Health:              healthHandler,
 			Audio:               audioHandler,
 			AMD:                 amdHandler,
 			LeadBatch:           leadBatchHandler,
 			SIPConfig:           sipConfigHandler,
+			Instance:            instanceHandler,
 		}
 	}
 

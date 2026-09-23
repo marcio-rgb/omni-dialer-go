@@ -1,0 +1,53 @@
+/* ==============================================================================
+   DIALER-GO PLATFORM DESIGN SYSTEM - DESIGN TOKENS (WARM DARK MODE)
+   Governed by: .agents/skills/platform-design-system/SKILL.md & GEMINI.md 0.5
+   ============================================================================== */
+
+:root {
+  /* Warm Dark Mode Backgrounds */
+  --bg-dark-900: #141211; /* Fundo Principal (Telas) */
+  --bg-dark-800: #1c1917; /* Painéis / Cards (stone-800) */
+  --bg-dark-700: #292524; /* Superfícies Elevadas / Hover */
+  --bg-dark-600: #44403c; /* Superfícies de Destaque */
+
+  /* Bordas e Divisórias */
+  --border-stone-800: #292524;
+  --border-stone-700: rgba(68, 64, 60, 0.7);
+  --border-focus: rgba(217, 119, 6, 0.6);
+
+  /* Acentos Warm Gradient (Destaques) */
+  --gradient-accent: linear-gradient(135deg, #c2410c 0%, #d97706 100%);
+  --gradient-accent-hover: linear-gradient(135deg, #ea580c 0%, #f59e0b 100%);
+  --accent-orange: #ea580c;
+  --accent-amber: #d97706;
+
+  /* Textos Temperados (Sem branco puro #ffffff) */
+  --text-stone-100: #f5f5f4; /* Texto Principal */
+  --text-stone-300: #d6d3d1; /* Texto Destacado */
+  --text-stone-400: #a8a29e; /* Texto Secundário / Labels */
+  --text-stone-500: #78716c; /* Metadados / Faint */
+
+  /* Paleta Funcional Suave */
+  --emerald-400: #34d399;
+  --emerald-950: rgba(6, 78, 59, 0.6);
+  --rose-400: #fb7185;
+  --rose-950: rgba(76, 5, 25, 0.6);
+  --amber-400: #fbbf24;
+  --amber-950: rgba(69, 26, 3, 0.6);
+  --sky-400: #38bdf8;
+  --sky-950: rgba(8, 47, 73, 0.6);
+
+  /* Tipografia Tripla */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+
+  /* Geometria e Sombras */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+  --shadow-warm-card: 0 4px 20px -2px rgba(0, 0, 0, 0.6);
+  --shadow-drawer: -8px 0 32px 0 rgba(0, 0, 0, 0.7);
+}

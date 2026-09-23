@@ -31,6 +31,7 @@ type HandlersConfig struct {
 	AMD                 *AMDHandler
 	LeadBatch           *LeadBatchHandler
 	SIPConfig           *SIPConfigHandler
+	Instance            *InstanceHandler
 }
 
 func NewServer(port int, handlers HandlersConfig) *Server {
@@ -40,7 +41,7 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(middleware.Timeout(5 * time.Minute))
 
 	// Health check e Painel Web SPA (sem bloqueio de IP)
 	r.Get("/health", handlers.Health.HealthCheck)
@@ -150,6 +151,18 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 					cfg.Put("/{file}", handlers.SIPConfig.Save)
 					cfg.Post("/{file}", handlers.SIPConfig.Save)
 					cfg.Delete("/{file}", handlers.SIPConfig.Delete)
+				})
+			}
+
+			// 9. Gestão de Instâncias Go (Dialer e Dispatcher)
+			if handlers.Instance != nil {
+				api.Route("/instances", func(inst chi.Router) {
+					inst.Get("/", handlers.Instance.List)
+					inst.Post("/", handlers.Instance.Create)
+					inst.Get("/{id}", handlers.Instance.Get)
+					inst.Put("/{id}", handlers.Instance.Update)
+					inst.Delete("/{id}", handlers.Instance.Delete)
+					inst.Post("/{id}/ping", handlers.Instance.Ping)
 				})
 			}
 		})

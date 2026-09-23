@@ -109,8 +109,8 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 INSERT INTO tenants (id, name, webhook)
 VALUES 
-    ('default', 'Default Tenant', 'http://37.60.228.113:3000/api/v1/telephony/webhook/inject-lead'),
-    ('cbr', 'Credito BR', 'http://37.60.228.113:3000/api/v1/telephony/webhook/inject-lead')
+    ('default', 'Default Tenant', 'https://api-omnichat.creditobr.org/api/v1/telephony/webhook/inject-lead'),
+    ('cbr', 'Credito BR', 'https://api-omnichat.creditobr.org/api/v1/telephony/webhook/inject-lead')
 ON CONFLICT (id) DO NOTHING;
 
 -- 5. Tabela de CDRs (Call Detail Records)
@@ -409,6 +409,24 @@ CREATE INDEX IF NOT EXISTS idx_benchmark_duration ON benchmark_results(duration_
 CREATE INDEX IF NOT EXISTS idx_benchmark_vosk_search ON benchmark_results USING gin (to_tsvector('portuguese', COALESCE(vosk_text, '')));
 CREATE INDEX IF NOT EXISTS idx_benchmark_whisper_search ON benchmark_results USING gin (to_tsvector('portuguese', COALESCE(whisper_text, '')));
 
+-- ============================================================================
+-- 10. TABELA DE INSTÂNCIAS (MODO DIALER E DISPATCHER)
+-- ============================================================================
 
+CREATE TABLE IF NOT EXISTS instances (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
+    name VARCHAR(128) NOT NULL,
+    mode VARCHAR(32) NOT NULL DEFAULT 'dialer', -- 'dialer' ou 'dispatcher'
+    host_url VARCHAR(255) NOT NULL,
+    api_key VARCHAR(255),
+    max_channels INTEGER NOT NULL DEFAULT 30,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    description VARCHAR(255),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
-
+CREATE INDEX IF NOT EXISTS idx_instances_tenant ON instances(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_instances_mode ON instances(mode);

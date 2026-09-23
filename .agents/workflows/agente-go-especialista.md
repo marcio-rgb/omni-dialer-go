@@ -20,15 +20,16 @@ O **Agente Especialista Go** é a autoridade técnica em padrões de código, co
 ```mermaid
 graph TD
     subgraph Dominio["1. Domain Layer (Sem Dependências)"]
-        Entidades["Entidades: CDR, ActiveChannel, Trunk, Campaign, Lead"]
-        DTOs["DTOs de I/O & RFC 7807 (ProblemDetails, AudioWordsDTO)"]
-        Enums["Enums Fortemente Tipados (CallType, Disposition, etc.)"]
+        Entidades["Entidades: CDR, ActiveChannel, Trunk, Campaign, Lead, Instance"]
+        DTOs["DTOs de I/O & RFC 7807 (ProblemDetails, AudioWordsDTO, InstanceDTO)"]
+        Enums["Enums Fortemente Tipados (CallType, Disposition, InstanceMode, etc.)"]
     end
 
     subgraph Portas["2. Ports Layer (Interfaces Puras)"]
         AMIPort["ports.AMIPort"]
         CachePort["ports.CachePort"]
-        RepoPort["ports.Trunk/Lead/Campaign/Report/RoutingRepository"]
+        RepoPort["ports.Trunk/Lead/Campaign/Report/Routing/InstanceRepository"]
+        InstancePort["ports.InstanceService"]
         StoragePort["ports.StoragePort"]
         WebhookPort["ports.WebhookPort"]
         TTSPort["ports.TTSPort"]
@@ -40,6 +41,7 @@ graph TD
         ManEngine["core.ManualEngine"]
         InbEngine["core.InboundEngine"]
         TrunkMgr["core.TrunkManager"]
+        InstanceServ["core.InstanceService (HTTP Probe & Lifecycle)"]
         CallNotif["core.CallNotifier (Webhook Dispatcher)"]
         MailProc["core.MailingProcessor"]
         SatServ["core.SaturationService"]
@@ -47,8 +49,8 @@ graph TD
     end
 
     subgraph Adaptadores["4. Adapters Layer (Implementações Concretas)"]
-        HTTPAdp["adapters/http (Chi v5)"]
-        PostgresAdp["adapters/postgres (pgx/v5 pool)"]
+        HTTPAdp["adapters/http (Chi v5 - Trunk & Instance Handlers)"]
+        PostgresAdp["adapters/postgres (pgx/v5 pool - InstanceRepo)"]
         RedisAdp["adapters/redis (go-redis/v9)"]
         AMIAdp["adapters/ami (TCP Socket puro)"]
         StorageAdp["adapters/storage (MinIO S3 Client)"]
@@ -151,7 +153,7 @@ graph TD
 | `RemoveAgentFromQueues` | `RemoveAgentFromQueues(ctx context.Context, agentID string) error` | Remove operador das filas no Redis ao ficar offline/ocupado. |
 | `AcquireRoomLock` | `AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error)` | Cria lock no Redis (`SETNX lock:room:<room_name> 1 EX ttl`) para evitar que duas goroutines usem a mesma sala. |
 | `ReleaseRoomLock` | `ReleaseRoomLock(ctx context.Context, roomName string) error` | Remove lock distribuído da sala no Redis (`DEL lock:room:<room_name>`). |
-| `PushAnsweredLead` | `PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error` | Enfileira evento de chamada atendida com dados dinâmicos (`custom`) em `dialer:answered_leads`. |
+| `PushAnsweredLead` | `PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error` | Enfileira evento de chamada atendida com dados dinâmicos (`custom`) em `dialer:answered_leads`, na fila da campanha `dialer:answered_leads:<campaign_id>`, na fila segregada por tenant `dialer:answered_leads:tenant:<tenant_id>` e no canal Pub/Sub `dialer:events:answered:<tenant_id>`. |
 | `GetCallsSummaryBuffer` | `GetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string) (*domain.CallsSummaryResponse, time.Duration, error)` | Lê buffer determinístico de relatório de 15 minutos (900s). |
 | `SetCallsSummaryBuffer` | `SetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string, data *domain.CallsSummaryResponse, ttl time.Duration) error` | Grava buffer de relatório no Redis. |
 
