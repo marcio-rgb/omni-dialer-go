@@ -121,6 +121,11 @@ services:
           - dialer-redis
     volumes:
       - dialer_redis_data:/data
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
     deploy:
       resources:
         limits:
