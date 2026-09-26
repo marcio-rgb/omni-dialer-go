@@ -24,6 +24,11 @@ type AMIPort interface {
 	TransferToLiveKit(ctx context.Context, channel string, agent *domain.AgentRedisData, customer *domain.CustomerMetadata) error
 	Hangup(ctx context.Context, actionID, channel string, cause int) error
 
+	// Ações de Filas (app_queue)
+	QueueAdd(ctx context.Context, actionID, queue, iface, memberName string, penalty int, paused bool) error
+	QueueRemove(ctx context.Context, actionID, queue, iface string) error
+	QueuePause(ctx context.Context, actionID, queue, iface string, paused bool, reason string) error
+
 	SetVar(ctx context.Context, actionID, channel, variable, value string) error
 	Command(ctx context.Context, actionID, command string) (string, error)
 	

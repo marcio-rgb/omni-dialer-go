@@ -34,6 +34,9 @@ type Config struct {
 	OmniChatWebhookURL  string
 	OperationMode       string
 	ConfigSeedDir       string
+	LiveKitURL          string
+	LiveKitAPIKey       string
+	LiveKitAPISecret    string
 }
 
 // Load lê as variáveis de ambiente e aplica valores default para o ambiente de produção.
@@ -99,6 +102,9 @@ func Load() (*Config, error) {
 		OmniChatWebhookURL:  webhookURL,
 		OperationMode:       operationMode,
 		ConfigSeedDir:       configSeedDir,
+		LiveKitURL:          getEnv("LIVEKIT_URL", "https://live.creditobr.org"),
+		LiveKitAPIKey:       getEnv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret:    getEnv("LIVEKIT_API_SECRET", "secret"),
 	}
 
 	if cfg.DatabaseURL == "" {

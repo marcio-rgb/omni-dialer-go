@@ -94,8 +94,8 @@ func TestAudioWordManager_UpsertAndPreview(t *testing.T) {
 func TestGenerateRealPreviewFile(t *testing.T) {
 	// Se os áudios reais existem em storage/audio_cache, concatena e salva o preview
 	baseDir := "../../storage/audio_cache"
-	if _, err := os.Stat(filepath.Join(baseDir, "base/saudacao.wav")); err != nil {
-		t.Skip("Audios reais nao encontrados, pulando gravacao de arquivo de teste")
+	if fi, err := os.Stat(filepath.Join(baseDir, "base/saudacao.wav")); err != nil || fi.Size() < 44 {
+		t.Skip("Audios reais nao encontrados ou vazios, pulando gravacao de arquivo de teste")
 	}
 
 	ac := NewAudioConcatenator()

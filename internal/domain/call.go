@@ -218,3 +218,17 @@ type CDRListResponse struct {
 	TotalPages int    `json:"total_pages"`
 	CDRs       []*CDR `json:"cdrs"`
 }
+
+// SystemAlertWebhookPayload representa a notificação de alerta operacional emitida para o Tenant em caso de Circuit Breaker.
+type SystemAlertWebhookPayload struct {
+	Event            string    `json:"event"` // "telephony.system_alert"
+	TenantID         string    `json:"tenant_id"`
+	CampaignID       string    `json:"campaign_id"`
+	AlertType        string    `json:"alert_type"`
+	AbandonRate10m   float64   `json:"abandon_rate_10m"`
+	ConsecutiveFails int64     `json:"consecutive_failures"`
+	Message          string    `json:"message"`
+	ActionRequired   string    `json:"action_required"`
+	Timestamp        time.Time `json:"timestamp"`
+}
+

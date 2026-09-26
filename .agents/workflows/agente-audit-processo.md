@@ -78,7 +78,7 @@ sequenceDiagram
         TrunkMgr->>Engine: HandlePredictiveHuman(channel, uniqueID, phone, campaignID)
         Engine->>Cache: PopIdleAgent / GetNextAvailableAgent(campaignID)
         alt Operador Disponível
-            Engine->>Cache: PushAnsweredLead(dialer:answered_leads) [Custom JSONB Payload]
+            Engine->>Cache: PushAnsweredLead(dialer:answered_leads:tenant:<tenant_id>) [Custom JSONB Payload]
             Engine->>AMI: Command(Set AGENT_ROOM)
             Engine->>AMI: Redirect(cos-all-custom, exten 9999)
         else Fila de Operador Esgotada

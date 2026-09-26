@@ -143,6 +143,7 @@ graph TD
 | [`internal/ports/storage_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/storage_port.go) | 10 | Contrato de armazenamento de objetos S3/MinIO. | Secondary Port |
 | [`internal/ports/webhook_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/webhook_port.go) | 25 | Contrato de notificação de desfecho de chamadas para upstream via Webhook. | Secondary Port |
 | [`internal/ports/tts_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/tts_port.go) | 15 | Contrato de conversão texto-para-áudio PCM WAV offline via modelo neural. | Secondary Port |
+| [`internal/ports/livekit_port.go`](file:///home/marcio/ecosystem/dialer-go/internal/ports/livekit_port.go) | 26 | Contrato de garantia idempotente de infraestrutura LiveKit SIP (Inbound Trunk e Dispatch Rule) e health check. | Secondary Port |
 
 ---
 
@@ -173,6 +174,7 @@ graph TD
 | [`internal/adapters/ami/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/client.go) | 348 | Cliente TCP nativo para Asterisk AMI com reconexão em background e pub-sub. | Adapter / Pub-Sub |
 | [`internal/adapters/ami/parser.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/ami/parser.go) | 68 | Parser de mensagens textuais no formato chave-valor RFC do Asterisk AMI. | Protocol Parser |
 | [`internal/adapters/postgres/db.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/db.go) | 87 | Pool transacional `pgx/v5` com retentativas de boot, verificação de saúde e auto-migração suave de colunas. | Adapter / Connection Pool |
+| [`internal/adapters/postgres/migrator.go`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/postgres/migrator.go) | 187 | Auto-migração DDL idempotente de schema, índices B-Tree, auto-seed do tenant default e troncos essenciais no boot. | Adapter / Schema Migrator |
 | [`internal/adapters/postgres/trunk_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/trunk_repo.go) | 219 | Repositório SQL de troncos SIP/PJSIP. | Repository |
 | [`internal/adapters/postgres/routing_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/routing_repo.go) | 67 | Repositório SQL da tabela rápida O(1) `phone_trunk_mappings`. | Repository |
 | [`internal/adapters/postgres/lead_repo.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/postgres/lead_repo.go) | 160 | Repositório SQL de leads com inserção em chunks de 5k (200k leads) e suporte a name/first_name. | Repository |
@@ -184,6 +186,8 @@ graph TD
 | [`internal/adapters/storage/minio_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/storage/minio_adapter.go) | 72 | Cliente MinIO S3 para download em streaming de arquivos de mailing. | Adapter / S3 Client |
 | [`internal/adapters/webhook/client.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/webhook/client.go) | 88 | Cliente HTTP para despacho de webhooks assíncronos de término de chamadas ao OmniChat. | Adapter / HTTP Client |
 | [`internal/adapters/tts/piper_adapter.go`](file:///home/marcio/ominichat/dialer-go/internal/adapters/tts/piper_adapter.go) | 115 | Adaptador local para síntese neural pt-BR (Piper TTS / modelo ONNX Dii). | Adapter / CLI Runner |
+| [`internal/adapters/livekit/client.go`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/livekit/client.go) | 234 | Cliente nativo Twirp/REST para LiveKit SIP com gerador de JWT HMAC-SHA256, auto-provisionamento e telemetria. | Adapter / HTTP Client |
+| [`internal/adapters/livekit/client_test.go`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/livekit/client_test.go) | 165 | Testes unitários com mock HTTP para criação de trunk/rule e health check do LiveKit SIP. | Test Suite |
 
 ---
 
@@ -239,6 +243,12 @@ graph TD
 | [`mode/dialer/extensions.conf`](file:///home/marcio/ecosystem/dialer-go/mode/dialer/extensions.conf) | Dialplan da VPS com rotas para operadoras e rota para o Dispatcher. |
 | [`mode/dispatcher/pjsip.conf`](file:///home/marcio/ecosystem/dialer-go/mode/dispatcher/pjsip.conf) | Configurações PJSIP do escritório (entrada da VPS `[from-vps]` + 60 troncos Vivo). |
 | [`mode/dispatcher/extensions.conf`](file:///home/marcio/ecosystem/dialer-go/mode/dispatcher/extensions.conf) | Dialplan do escritório com Round-Robin, `GROUP_COUNT` por tronco e failover automático. |
+| [`mode/simulator/extensions.conf`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/extensions.conf) | Dialplan do servidor de testes (`38.242.219.186`) com looping contínuo de áudio até desligamento pelo usuário. |
+| [`mode/simulator/pjsip.conf`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/pjsip.conf) | Configurações PJSIP do servidor de testes com transportes UDP :5070 e :5060. |
+| [`mode/simulator/asterisk.conf`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/asterisk.conf) | Configuração de diretórios e runtime do Asterisk no simulador de testes. |
+| [`mode/simulator/modules.conf`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/modules.conf) | Módulos essenciais carregados pelo Asterisk no simulador de testes. |
+| [`mode/simulator/play_benchmark.py`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/play_benchmark.py) | Script AGI para sorteio de áudio e registro no gabarito forense SQLite/JSONL. |
+| [`mode/simulator/README.md`](file:///home/marcio/ecosystem/dialer-go/mode/simulator/README.md) | Manual canônico da arquitetura e operação do servidor de testes / simulador Asterisk. |
 | [`.agents/dispatcher/README.md`](file:///home/marcio/ecosystem/dialer-go/.agents/dispatcher/README.md) | Manual canônico da arquitetura e operação do modo Dispatcher. |
 
 ---
@@ -251,5 +261,20 @@ graph TD
 | [`internal/adapters/http/web/style.css`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/http/web/style.css) | Folha de estilos Dark Mode com Glassmorphism, badges de status e layout responsivo. |
 | [`internal/adapters/http/web/app.js`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/http/web/app.js) | Controlador JavaScript reativo (polling de status, CRUD de troncos, editor `sip_data` e Asterisk reload). |
 
+---
 
+### 2.13. Scripts de Operação & Diagnóstico (`scripts/`)
+| Arquivo | Responsabilidade |
+| :--- | :--- |
+| [`scripts/setup_livekit_sip.js`](file:///home/marcio/ecosystem/dialer-go/scripts/setup_livekit_sip.js) | CLI standalone em Node.js para auditoria e auto-provisionamento do LiveKit SIP Trunk & Dispatch Rule. |
+
+---
+
+### 2.14. Diretrizes de Governança & Regras Telefônicas (`docs/rules/`)
+| Arquivo | Responsabilidade |
+| :--- | :--- |
+| [`docs/rules/PREDICTIVE_QUEUES_LIVEKIT.md`](file:///home/marcio/ecosystem/dialer-go/docs/rules/PREDICTIVE_QUEUES_LIVEKIT.md) | Arquitetura Canônica de Filas Preditivas, Conexões LiveKit Persistentes e Gestão de Estados de Tabulação e Ociosidade Justa (`leastrecent`). |
+| [`docs/rules/TELEPHONY_POLICIES.md`](file:///home/marcio/ecosystem/dialer-go/docs/rules/TELEPHONY_POLICIES.md) | Políticas operacionais de capacidade, quota de reserva humana e descarte regulatório. |
+| [`docs/rules/AUDIT_FORENSICS.md`](file:///home/marcio/ecosystem/dialer-go/docs/rules/AUDIT_FORENSICS.md) | Diretrizes de rastreabilidade ponta a ponta e matriz de auditoria de chamadas. |
+| [`docs/rules/CAMPAIGN_SATURATION.md`](file:///home/marcio/ecosystem/dialer-go/docs/rules/CAMPAIGN_SATURATION.md) | Métricas de queima e saturação de mailings de campanha. |
 

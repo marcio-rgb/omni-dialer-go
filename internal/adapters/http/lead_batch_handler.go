@@ -150,7 +150,20 @@ func (h *LeadBatchHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Processamento O(1) de áudios em lote: sintetiza apenas os nomes únicos ausentes
+	// 3. Persiste no PostgreSQL em batch com chunking seguro (< 50ms)
+	if h.leadRepo != nil {
+		if _, err := h.leadRepo.BatchInsert(ctx, dbLeads); err != nil {
+			domain.NewErrInternal(fmt.Sprintf("Falha ao persistir leads no banco de dados: %s", err.Error())).WriteJSON(w)
+			return
+		}
+	}
+
+	// 4. Enfileira no Redis para o discador preditivo
+	if h.cache != nil {
+		_ = h.cache.PushLeads(ctx, req.CampaignID, queuePayloads)
+	}
+
+	// 5. Processamento O(1) de áudios em lote: sintetiza apenas os nomes únicos ausentes
 	newlySynthesized := make(map[string]bool)
 	if h.audioWordMgr != nil && len(uniqueNames) > 0 {
 		newMap, err := h.audioWordMgr.BatchProcessNames(ctx, uniqueNames)
@@ -177,19 +190,6 @@ func (h *LeadBatchHandler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 		} else {
 			cachedAudiosCount++
 		}
-	}
-
-	// 4. Persiste no PostgreSQL em batch com chunking seguro
-	if h.leadRepo != nil {
-		if _, err := h.leadRepo.BatchInsert(ctx, dbLeads); err != nil {
-			domain.NewErrInternal(fmt.Sprintf("Falha ao persistir leads no banco de dados: %s", err.Error())).WriteJSON(w)
-			return
-		}
-	}
-
-	// 5. Enfileira no Redis para o discador preditivo
-	if h.cache != nil {
-		_ = h.cache.PushLeads(ctx, req.CampaignID, queuePayloads)
 	}
 
 	resp := domain.BatchLeadResponse{

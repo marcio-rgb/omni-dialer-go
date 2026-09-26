@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"dialer-go/internal/domain"
 	"dialer-go/internal/ports"
@@ -229,20 +230,32 @@ func (mp *MailingProcessor) ProcessZipRefill(ctx context.Context, tenantID, camp
 		return nil, domain.NewErrBadRequest("EMPTY_VALID_LEADS", "Nenhum lead válido foi extraído do arquivo")
 	}
 
-	// Síntese em lote de nomes únicos ausentes O(1)
-	if mp.audioWordMgr != nil && len(uniqueNames) > 0 {
-		_, _ = mp.audioWordMgr.BatchProcessNames(ctx, uniqueNames)
-	}
-
-	// Persiste em batch no Postgres
+	// 1. Persiste em batch no Postgres PRIMEIRO (< 100ms)
 	_, err = mp.repo.BatchInsert(ctx, leads)
 	if err != nil {
 		return nil, domain.NewErrInternal(fmt.Sprintf("Falha ao persistir leads no banco de dados: %s", err.Error()))
 	}
 
-	// Enfileira no Redis para consumo imediato do discador preditivo
+	// 2. Enfileira no Redis para consumo imediato do discador preditivo
 	_ = mp.cache.PushLeads(ctx, campaignID, phones)
 	qSize, _ := mp.cache.GetQueueLength(ctx, campaignID)
+
+	// 3. Síntese em background de nomes únicos ausentes (não bloqueia persistência nem excede timeouts)
+	if mp.audioWordMgr != nil && len(uniqueNames) > 0 {
+		missingNames := make(map[string]string)
+		for slug, rawText := range uniqueNames {
+			if !mp.audioWordMgr.HasNameAudio(slug) {
+				missingNames[slug] = rawText
+			}
+		}
+		if len(missingNames) > 0 {
+			go func(namesToSynth map[string]string) {
+				bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				_, _ = mp.audioWordMgr.BatchProcessNames(bgCtx, namesToSynth)
+			}(missingNames)
+		}
+	}
 
 	return &domain.RefillResponse{
 		CampaignID:  campaignID,

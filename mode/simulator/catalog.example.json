@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "name": "sim_01_human_alo",
+    "type": "HUMAN"
+  },
+  {
+    "id": 2,
+    "name": "sim_02_human_pronto_quem_fala",
+    "type": "HUMAN"
+  },
+  {
+    "id": 3,
+    "name": "sim_03_human_bom_dia",
+    "type": "HUMAN"
+  },
+  {
+    "id": 4,
+    "name": "sim_04_machine_caixa_postal",
+    "type": "MACHINE"
+  },
+  {
+    "id": 5,
+    "name": "sim_05_machine_deixe_seu_recado",
+    "type": "MACHINE"
+  },
+  {
+    "id": 6,
+    "name": "sim_06_machine_mensagem_operadora",
+    "type": "MACHINE"
+  }
+]

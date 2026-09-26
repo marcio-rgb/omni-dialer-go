@@ -20,6 +20,8 @@ import (
 // @postExecution
 // - RPush atômico na fila global `dialer:answered_leads`
 // - RPush opcional na fila específica `dialer:answered_leads:<campaign_id>`
+// - RPush na fila segregada por tenant `dialer:answered_leads:tenant:<tenant_id>`
+// - Publish em tempo real no canal Pub/Sub `dialer:events:answered:<tenant_id>`
 func (r *RedisAdapter) PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error {
 	if r == nil || r.client == nil || event == nil {
 		return nil
@@ -38,14 +40,21 @@ func (r *RedisAdapter) PushAnsweredLead(ctx context.Context, event *domain.Answe
 	}
 
 	pipe := r.client.Pipeline()
-	// 1. Fila global de leads atendidos
+	// 1. Fila global de leads atendidos (legado / central)
 	pipe.RPush(ctx, "dialer:answered_leads", data)
 
-	// 2. Fila por campanha (se informada)
+	// 2. Fila particionada por campanha
 	if event.CampaignID != "" {
 		pipe.RPush(ctx, fmt.Sprintf("dialer:answered_leads:%s", event.CampaignID), data)
+	}
+
+	// 3. Fila e Pub/Sub segregados por Tenant (Multi-Tenant nativo)
+	if event.TenantID != "" {
+		pipe.RPush(ctx, fmt.Sprintf("dialer:answered_leads:tenant:%s", event.TenantID), data)
+		pipe.Publish(ctx, fmt.Sprintf("dialer:events:answered:%s", event.TenantID), data)
 	}
 
 	_, err = pipe.Exec(ctx)
 	return err
 }
+

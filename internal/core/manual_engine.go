@@ -259,3 +259,62 @@ func (me *ManualEngine) dispatchInjectLeadWebhook(tenantID, userID, phone, cpf, 
 		_ = me.webhookClient.NotifyInjectLead(ctx, webhookURL, params)
 	}
 }
+
+// HangupCall encerra imediatamente uma chamada ativa no Asterisk PBX.
+//
+// @pattern Command / Call Controller
+// @governedBy docs/rules/TELEPHONY_POLICIES.md
+// @preExecution Validação de identificador (call_id, channel, agent_id ou phone).
+// @postExecution Disparo de comando Hangup via AMI e retorno de confirmação.
+func (me *ManualEngine) HangupCall(ctx context.Context, req *domain.HangupCallRequest) (*domain.HangupCallResponse, error) {
+	if req.CallID == "" && req.Channel == "" && req.AgentID == "" && req.Phone == "" {
+		return nil, domain.NewErrBadRequest("MISSING_IDENTIFIER", "Ao menos um identificador (call_id, channel, agent_id, phone) é obrigatório.")
+	}
+
+	cause := req.Cause
+	if cause <= 0 {
+		cause = 16 // Normal Clearing (Q.850)
+	}
+
+	targetChannel := req.Channel
+	var callID string
+
+	// Se o canal Asterisk não foi fornecido diretamente, busca no ChannelManager
+	if targetChannel == "" || !strings.Contains(targetChannel, "/") {
+		var ch *domain.ActiveChannel
+		if req.CallID != "" {
+			ch = me.channels.FindActiveChannel(req.CallID)
+		} else if req.AgentID != "" {
+			ch = me.channels.FindActiveChannel(req.AgentID)
+		} else if req.Phone != "" {
+			ch = me.channels.FindActiveChannel(req.Phone)
+		}
+
+		if ch != nil {
+			callID = ch.ChannelID
+			targetChannel = me.channels.GetAsteriskChannelByCallID(ch.ChannelID)
+			if targetChannel == "" {
+				targetChannel = ch.ChannelID
+			}
+		}
+	}
+
+	if targetChannel == "" {
+		return nil, domain.NewErrNotFound("CALL_NOT_FOUND", "Nenhuma chamada ativa encontrada para o identificador informado.")
+	}
+
+	actionID := fmt.Sprintf("hup-%d", time.Now().UnixMilli())
+	if me.ami != nil && me.ami.IsConnected() {
+		if err := me.ami.Hangup(ctx, actionID, targetChannel, cause); err != nil {
+			return nil, domain.NewErrInternal(fmt.Sprintf("Falha ao desligar chamada no Asterisk: %v", err))
+		}
+	}
+
+	return &domain.HangupCallResponse{
+		Success: true,
+		Message: "Comando de desligamento enviado com sucesso",
+		CallID:  callID,
+		Channel: targetChannel,
+	}, nil
+}
+

@@ -122,6 +122,7 @@ func main() {
 		predictiveEngine := core.NewPredictiveEngine(amiClient, channelMgr, cache, campaignRepo, trunkRepo, leadRepo)
 		predictiveEngine.SetMinChannelsPerAgent(cfg.MinChannelsPerAgent)
 		predictiveEngine.SetTenantRepository(tenantRepo)
+		predictiveEngine.SetReportRepository(reportRepo)
 		predictiveEngine.SetWebhookClient(webhookAdapter)
 		trunkMgr.SetEngines(predictiveEngine, inboundEngine)
 		trunkMgr.SetNotifier(callNotifier)
@@ -153,6 +154,11 @@ func main() {
 		amdHandler := httpAdapter.NewAMDHandler(amdConfigMgr, amiClient)
 		leadBatchHandler := httpAdapter.NewLeadBatchHandler(leadRepo, cache, audioWordMgr)
 
+		// 8. Gestão Dinâmica de Filas e Presença de Operadores (Asterisk app_queue + Redis PubSub)
+		agentQueueMgr := core.NewAgentQueueManager(amiClient, cache)
+		cache.StartPresenceListener(ctx, agentQueueMgr)
+		queueHandler := httpAdapter.NewQueueHandler(agentQueueMgr)
+
 		healthHandler := httpAdapter.NewHealthHandler(pgPool, cache, amiClient, channelMgr)
 		healthHandler.SetLiveKitPort(livekitClient)
 
@@ -172,6 +178,7 @@ func main() {
 			LeadBatch:           leadBatchHandler,
 			SIPConfig:           sipConfigHandler,
 			Instance:            instanceHandler,
+			Queue:               queueHandler,
 		}
 	}
 

@@ -59,3 +59,35 @@ func (h *ManualHandler) DialManual(w http.ResponseWriter, r *http.Request) {
 		"data":    resp,
 	})
 }
+
+// Hangup desliga imediatamente uma chamada telefônica em andamento.
+//
+// @pattern Strategy / Command
+// @governedBy docs/rules/TELEPHONY_POLICIES.md
+// @preExecution Validação de identificador (call_id, channel, agent_id, phone).
+// @postExecution Disparo de Hangup via AMI e resposta HTTP 200 OK.
+func (h *ManualHandler) Hangup(w http.ResponseWriter, r *http.Request) {
+	var req domain.HangupCallRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		domain.NewErrBadRequest("INVALID_JSON", "Payload JSON inválido").WriteJSON(w)
+		return
+	}
+
+	resp, err := h.engine.HangupCall(r.Context(), &req)
+	if err != nil {
+		if prob, ok := err.(*domain.ProblemDetails); ok {
+			prob.WriteJSON(w)
+			return
+		}
+		domain.NewErrInternal(err.Error()).WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    resp,
+	})
+}
+

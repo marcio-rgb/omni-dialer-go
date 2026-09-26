@@ -54,6 +54,7 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `POST` | `/api/v1/predictive/pacing` | Atualiza taxa dinâmica de chamadas por operador disponível | Whitelist + JSON Body |
 | `PUT` | `/api/v1/predictive/pacing` | Atualiza taxa dinâmica de chamadas por operador disponível | Whitelist + JSON Body |
 | `POST` | `/api/v1/calls/manual` | Origina chamada manual com prioridade preemptiva imediata | Whitelist + Body (`tenant_id`) |
+| `POST` | `/api/v1/calls/hangup` | Encerra chamada ativa imediatamente por call_id, channel, agent_id ou phone | Whitelist + JSON Body |
 | `GET` | `/api/v1/campaigns` | Lista campanhas do tenant com filtro opcional por status | Whitelist + `X-Tenant-Id` / Query |
 | `GET` | `/api/v1/campaigns/{id}` | Recupera uma campanha específica por ID | Whitelist + `X-Tenant-Id` / Query |
 | `POST` | `/api/v1/campaigns` | Cria nova campanha no discador (modo, agressividade, tronco) | Whitelist + Body (`tenant_id`) |
@@ -93,6 +94,11 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `PUT` | `/api/v1/instances/{id}` | Atualiza parâmetros operacionais da instância | Whitelist + JSON Body |
 | `DELETE`| `/api/v1/instances/{id}` | Remove uma instância do catálogo | Whitelist + `X-Tenant-Id` |
 | `POST` | `/api/v1/instances/{id}/ping` | Executa teste de conectividade e capacidade HTTP (/health) | Whitelist + `X-Tenant-Id` |
+| `POST` | `/api/v1/queues/presence` | Atualiza estado de presença unificado (ready, pause, tabulando, leave) | Whitelist + JSON Body |
+| `POST` | `/api/v1/queues/members` | Adiciona operador dinamicamente na fila Asterisk (app_queue) e Redis | Whitelist + JSON Body |
+| `DELETE`| `/api/v1/queues/members` | Remove operador da fila Asterisk (app_queue) e Redis | Whitelist + JSON Body |
+| `POST` | `/api/v1/queues/members/pause` | Pausa ou retoma operador na fila Asterisk | Whitelist + JSON Body |
+| `GET` | `/api/v1/queues/{queue_id}/members` | Consulta status da fila no Asterisk | Whitelist |
 
 ---
 
@@ -1466,5 +1472,84 @@ Sempre que uma chamada preditiva tem seu atendimento humano confirmado (`Predict
   "checked_at": "2026-09-23T03:30:00Z"
 }
 ```
+
+---
+
+## 7. Controle de Chamadas & Gestão de Presença de Filas
+
+### 7.1. Encerramento Imediato de Chamada (`POST /api/v1/calls/hangup`)
+Permite ao sistema parceiro (OmniChat) derrubar cirurgicamente e instantaneamente a perna telefônica no Asterisk PBX assim que o atendente clica em "Desligar".
+
+- **Headers:** `Content-Type: application/json`
+- **Request Body (ao menos um identificador obrigatório):**
+```json
+{
+  "agent_id": "emerson",
+  "call_id": "call-manual-123456",
+  "channel": "PJSIP/vivo_01-000001a",
+  "phone": "11988887777",
+  "cause": 16
+}
+```
+- **Campos:**
+  - `agent_id` *(string, opcional)*: Identificador do operador. Localiza automaticamente o canal ativo associado.
+  - `call_id` *(string, opcional)*: ID único da chamada no Dialer-Go.
+  - `channel` *(string, opcional)*: Nome literal do canal no Asterisk.
+  - `phone` *(string, opcional)*: Número de telefone do cliente.
+  - `cause` *(integer, opcional)*: Código de causa Q.850 (Padrão: `16` - Normal Clearing).
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "success": true,
+    "message": "Comando de desligamento enviado com sucesso",
+    "call_id": "call-manual-123456",
+    "channel": "PJSIP/vivo_01-000001a"
+  }
+}
+```
+- **Erros RFC 7807:**
+  - `400 Bad Request` (`MISSING_IDENTIFIER`): Nenhum identificador informado.
+  - `404 Not Found` (`CALL_NOT_FOUND`): Chamada não encontrada ou já encerrada.
+
+---
+
+### 7.2. Ponto de Entrada Unificado de Presença (`POST /api/v1/queues/presence`)
+*Também disponível via alias `POST /api/v1/queue/presence`.*
+
+Controla as transições de estado do atendente entre **Disponível**, **Tabulação (ACW)**, **Pausa**, **Negociação** e **Offline**.
+
+- **Headers:** `Content-Type: application/json`
+- **Request Body:**
+```json
+{
+  "action": "pause",
+  "tenant_id": "default",
+  "campaign_id": "12",
+  "agent_id": "emerson",
+  "livekit_room": "room_emerson",
+  "reason": "ACW_Tabulacao"
+}
+```
+- **Ações Suportadas (`action`):**
+  - `"pause"` / `"tabulando"` / `"acw"`: Coloca o atendente em pausa na fila Asterisk e remove do pool de ociosos do discador.
+  - `"ready"` / `"available"` / `"unpause"`: Despausa o atendente na fila Asterisk e reinjeta no pool de ociosos do discador.
+  - `"leave"` / `"offline"` / `"logout"`: Remove o atendente da fila Asterisk e purga do Redis.
+  - `"add"` / `"join"`: Adiciona o atendente à fila Asterisk e registra no Redis.
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Estado de presença atualizado com sucesso",
+    "action": "pause",
+    "campaign_id": "12",
+    "agent_id": "emerson",
+    "reason": "ACW_Tabulacao"
+  }
+}
+```
+
 
 

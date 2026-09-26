@@ -1,0 +1,43 @@
+version: '3.8'
+
+# Stack Espelho (Mirror Stack) para Homologação e Testes Paralelos Seguros
+# Executa em porta isolada (8082) conectado à mesma rede de infraestrutura telefônica
+services:
+  dialer-go-mirror:
+    image: ghcr.io/marcio-rgb/omni-dialer-go:latest
+    container_name: dialer_go_mirror
+    networks:
+      - dialer-go_minha_rede
+    environment:
+      - PORT=8082
+      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=dialer-redis:6379
+      - REDIS_DB=0
+      - ASTERISK_AMI_HOST=asterisk
+      - ASTERISK_AMI_PORT=5038
+      - ASTERISK_AMI_USER=Omnichat
+      - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
+      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=creditobr
+      - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
+      - MINIO_BUCKET=mailings
+      - MINIO_USE_SSL=false
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,84.247.135.255,*
+      - MAX_GLOBAL_CHANNELS=250
+      - HUMAN_RESERVED_QUOTA=20
+      - MIN_CHANNELS_PER_AGENT=2
+      - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
+      - LIVEKIT_URL=https://live.creditobr.org
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+    volumes:
+      - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
+      - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
+    ports:
+      - "8082:8082"
+    restart: "no"
+
+networks:
+  dialer-go_minha_rede:
+    external: true

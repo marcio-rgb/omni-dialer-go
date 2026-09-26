@@ -138,3 +138,40 @@ func (c *WebhookClient) NotifyInjectLead(ctx context.Context, webhookURL string,
 	log.Printf("[INFO] [WEBHOOK-INJECT-LEAD] Lead injetado com sucesso via GET para %s (HTTP %d)", parsedURL.String(), resp.StatusCode)
 	return nil
 }
+
+// NotifySystemAlert dispara o webhook POST de alerta para o tenant em caso de anomalia ou Circuit Breaker.
+func (c *WebhookClient) NotifySystemAlert(ctx context.Context, webhookURL string, payload *domain.SystemAlertWebhookPayload) error {
+	targetURL := webhookURL
+	if targetURL == "" {
+		targetURL = c.defaultURL
+	}
+	if targetURL == "" {
+		return nil
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("falha ao serializar payload de alerta: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("falha ao criar requisição de alerta: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-Id", payload.TenantID)
+	req.Header.Set("User-Agent", "DialerGo-AlertNotifier/1.0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[WARN] [WEBHOOK-ALERT] Falha ao enviar alerta para %s: %v", targetURL, err)
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	log.Printf("[INFO] [WEBHOOK-ALERT] Alerta de sistema (%s) despachado com sucesso para %s (HTTP %d)", payload.AlertType, targetURL, resp.StatusCode)
+	return nil
+}
+

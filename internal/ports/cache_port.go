@@ -50,6 +50,11 @@ type CachePort interface {
 
 	// Fila de Chamadas Atendidas
 	PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error
+
+	// Circuit Breaker & Erros Consecutivos
+	ResetConsecutiveErrors(ctx context.Context, campaignID string) error
+	IncrementConsecutiveErrors(ctx context.Context, campaignID string) (int64, error)
+	GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error)
 }
 
 

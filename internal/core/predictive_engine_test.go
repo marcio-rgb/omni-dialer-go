@@ -65,6 +65,9 @@ func (m *mockCachePredictive) RemoveAgentFromQueues(ctx context.Context, agentID
 func (m *mockCachePredictive) AcquireRoomLock(ctx context.Context, roomName string, ttl time.Duration) (bool, error) { return true, nil }
 func (m *mockCachePredictive) ReleaseRoomLock(ctx context.Context, roomName string) error { return nil }
 func (m *mockCachePredictive) PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error { return nil }
+func (m *mockCachePredictive) ResetConsecutiveErrors(ctx context.Context, campaignID string) error { return nil }
+func (m *mockCachePredictive) IncrementConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) { return 0, nil }
+func (m *mockCachePredictive) GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) { return 0, nil }
 
 
 
@@ -405,8 +408,15 @@ func TestPredictiveEngine_MinChannelsPerAgentFloor(t *testing.T) {
 	}
 
 	// Caso 2: 2 agentes disponíveis -> Deve disparar no mínimo 14 chamadas (7 por agente)
-	// Recarrega leads na fila
-	cache.queue = leadBatch
+	// Recarrega leads na fila e limpa canais anteriores
+	cm2 := NewChannelManager(60, 10, nil)
+	cm2.RegisterTrunkLimit("trunk-vivo", 50)
+	cache2 := &mockCachePredictive{
+		queue: leadBatch,
+	}
+	engine2 := NewPredictiveEngine(ami, cm2, cache2, campaigns, trunks, leads)
+	engine2.SetMinChannelsPerAgent(7)
+
 	req2 := &domain.PredictiveDemandRequest{
 		TenantID:   "tenant-test",
 		CampaignID: "camp-floor",
@@ -415,7 +425,7 @@ func TestPredictiveEngine_MinChannelsPerAgentFloor(t *testing.T) {
 			{AgentID: "agent-2", SIPRoute: "sala_agente_2"},
 		},
 	}
-	resp2, err := engine.ProcessDemand(ctx, req2)
+	resp2, err := engine2.ProcessDemand(ctx, req2)
 	if err != nil {
 		t.Fatalf("ProcessDemand 2 agentes falhou: %v", err)
 	}

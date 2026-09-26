@@ -282,3 +282,82 @@ func (tm *TrunkManager) handleUserEvent(ctx context.Context, attrs map[string]st
 		}
 	}
 }
+
+// handleAgentConnect processa o evento AMI emitido quando um operador é conectado à chamada via Asterisk Queue.
+func (tm *TrunkManager) handleAgentConnect(ctx context.Context, attrs map[string]string) {
+	channel := attrs["Channel"]
+	uniqueID := attrs["Uniqueid"]
+	queue := attrs["Queue"]
+	member := attrs["MemberName"]
+	if member == "" {
+		member = attrs["Interface"]
+	}
+	if member == "" {
+		member = attrs["Member"]
+	}
+
+	callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
+	activeChan := tm.channels.GetActiveChannelByAsterisk(channel, uniqueID)
+
+	agentID := member
+	if strings.Contains(agentID, "/") {
+		parts := strings.Split(agentID, "/")
+		agentID = parts[len(parts)-1]
+	}
+	if strings.Contains(agentID, "@") {
+		parts := strings.Split(agentID, "@")
+		agentID = parts[0]
+	}
+
+	if callID != "" && agentID != "" {
+		tm.channels.AssignAgent(callID, agentID)
+	}
+
+	campaignID := ""
+	tenantID := ""
+	phone := ""
+	var cpf, name string
+	var custom map[string]string
+
+	if activeChan != nil {
+		if activeChan.CampaignID != nil {
+			campaignID = *activeChan.CampaignID
+		}
+		tenantID = activeChan.TenantID
+		phone = activeChan.Phone
+		cpf = activeChan.CPF
+		name = activeChan.Name
+		custom = activeChan.Custom
+	}
+
+	if campaignID == "" && strings.HasPrefix(queue, "q_") {
+		campaignID = strings.TrimPrefix(queue, "q_")
+	}
+
+	// 1. Zera o contador de erros consecutivos da campanha no Redis
+	if tm.cache != nil && campaignID != "" {
+		_ = tm.cache.ResetConsecutiveErrors(ctx, campaignID)
+	}
+
+	// 2. Enfileira o evento de atendimento no Redis (dialer:answered_leads)
+	if tm.cache != nil {
+		now := time.Now()
+		event := &domain.AnsweredLeadEvent{
+			Event:      "call.answered",
+			CallID:     callID,
+			Channel:    channel,
+			TenantID:   tenantID,
+			CampaignID: campaignID,
+			Phone:      phone,
+			CPF:        cpf,
+			Name:       name,
+			AgentID:    agentID,
+			RoomName:   member,
+			Custom:     custom,
+			AnsweredAt: now,
+			Timestamp:  now.Unix(),
+		}
+		_ = tm.cache.PushAnsweredLead(ctx, event)
+	}
+}
+

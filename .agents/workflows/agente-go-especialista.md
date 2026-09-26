@@ -253,6 +253,18 @@ graph TD
   - Aloca canal com preempção absoluta (`isHuman = true`).
   - Resolve rota SIP do operador via tronco `livekit-sip`.
   - Dispara `Originate` para contexto `from-dialer-manual`.
+- `HangupCall(ctx context.Context, req *domain.HangupCallRequest) (*domain.HangupCallResponse, error)`:
+  - Localiza o canal ativo por `call_id`, `channel`, `agent_id` ou `phone` via `ChannelManager.FindActiveChannel`.
+  - Dispara encerramento imediato via `AMIPort.Hangup` com causa Q.850 (`cause = 16`).
+
+### 5.3.1. `core.AgentQueueManager` ([`agent_queue_manager.go`](file:///home/marcio/ecosystem/dialer-go/internal/core/agent_queue_manager.go))
+- `SetPresence(ctx context.Context, event *domain.QueuePresenceEvent) error`: Ponto unificado de controle de presença.
+- `PauseMember(ctx context.Context, req *domain.QueueMemberPauseRequest) error`:
+  - Dispara `QueuePause` no Asterisk via AMI para colocar ou tirar operador de pausa na fila.
+  - Sincroniza atomicamente com o cache Redis (`RemoveAgentFromQueues` se pausado / `PushIdleAgent` se despausado).
+- `AddMember(ctx context.Context, req *domain.QueueMemberRequest) error`: Insere membro dinâmico na fila Asterisk e registra ocioso no Redis.
+- `RemoveMember(ctx context.Context, req *domain.QueueMemberRemoveRequest) error`: Remove membro dinâmico na fila Asterisk e purga do Redis.
+
 
 ### 5.4. `core.MailingProcessor` ([`mailing_processor.go`](file:///home/marcio/ominichat/dialer-go/internal/core/mailing_processor.go))
 - `ProcessZipRefill(ctx context.Context, tenantID, campaignID, fileURI string) (*domain.RefillResponse, error)`:

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -347,3 +348,80 @@ func (cm *ChannelManager) GetTrunkActiveCount(trunkID string) int {
 	}
 	return 0
 }
+
+// GetCampaignRingingCalls conta atomicamente as chamadas que ainda estão em fase de toque (não atendidas) para uma campanha.
+func (cm *ChannelManager) GetCampaignRingingCalls(campaignID string) int {
+	if campaignID == "" {
+		return 0
+	}
+	cm.chanMu.RLock()
+	defer cm.chanMu.RUnlock()
+	count := 0
+	for _, ch := range cm.activeChannels {
+		if ch.CampaignID != nil && *ch.CampaignID == campaignID && !ch.IsAnswered {
+			count++
+		}
+	}
+	return count
+}
+
+// FindActiveChannel localiza atomicamente um canal ativo por CallID, nome do canal Asterisk, UniqueID, AgentID ou telefone.
+//
+// @pattern Registry (Active Channel Locator)
+// @governedBy docs/rules/TELEPHONY_POLICIES.md
+// @preExecution Identificador não vazio.
+// @postExecution Retorno thread-safe do ActiveChannel ou nil sob RLock.
+func (cm *ChannelManager) FindActiveChannel(identifier string) *domain.ActiveChannel {
+	if identifier == "" {
+		return nil
+	}
+	cm.chanMu.RLock()
+	defer cm.chanMu.RUnlock()
+
+	// 1. Busca direta por CallID
+	if ch, exists := cm.activeChannels[identifier]; exists {
+		return ch
+	}
+
+	// 2. Busca por canal Asterisk registrado no mapa reverso
+	if callID, exists := cm.astToCall[identifier]; exists {
+		if ch, ok := cm.activeChannels[callID]; ok {
+			return ch
+		}
+	}
+
+	// 3. Varredura linear segura por AgentID ou Telefone
+	for _, ch := range cm.activeChannels {
+		if ch.AgentID != nil && *ch.AgentID == identifier {
+			return ch
+		}
+		if ch.Phone == identifier {
+			return ch
+		}
+	}
+
+	// 4. Varredura por aproximação no mapa astToCall
+	for astChan, callID := range cm.astToCall {
+		if strings.Contains(astChan, identifier) {
+			if ch, ok := cm.activeChannels[callID]; ok {
+				return ch
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetAsteriskChannelByCallID retorna o canal Asterisk associado ao CallID.
+func (cm *ChannelManager) GetAsteriskChannelByCallID(callID string) string {
+	cm.chanMu.RLock()
+	defer cm.chanMu.RUnlock()
+	for astChan, cid := range cm.astToCall {
+		if cid == callID && strings.Contains(astChan, "/") {
+			return astChan
+		}
+	}
+	return ""
+}
+
+

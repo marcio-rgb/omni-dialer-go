@@ -16,4 +16,8 @@ type WebhookPort interface {
 
 	// NotifyInjectLead dispara o webhook GET assíncrono para o tenant ao conectar a chamada com os dados do lead.
 	NotifyInjectLead(ctx context.Context, webhookURL string, params *domain.InjectLeadParams) error
+
+	// NotifySystemAlert dispara o webhook POST de alerta para o tenant em caso de anomalia ou Circuit Breaker.
+	NotifySystemAlert(ctx context.Context, webhookURL string, payload *domain.SystemAlertWebhookPayload) error
 }
+

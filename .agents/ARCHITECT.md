@@ -13,6 +13,7 @@ Documento Mestre Canônico de Arquitetura, Invariantes, Grafo de Execução e Di
 > [!NOTE]
 > Este arquivo é a **ÚNICA FONTE CANÔNICA DE VERDADE** da arquitetura do Dialer-Go. Para aprofundamento operacional e contratos de rotas:
 > - 👉 [Manual de Arquitetura Operacional Exaustivo (2.000+ linhas): `.agents/ARCHITECTURE.md`](file:///home/marcio/ominichat/dialer-go/.agents/ARCHITECTURE.md)
+> - 👉 [Arquitetura de Filas Preditivas, LiveKit & Estados: `docs/rules/PREDICTIVE_QUEUES_LIVEKIT.md`](file:///home/marcio/ecosystem/dialer-go/docs/rules/PREDICTIVE_QUEUES_LIVEKIT.md)
 > - 👉 [Catálogo Oficial de Endpoints & RFC 7807: `.agents/workflows/API_REFERENCE.md`](file:///home/marcio/ominichat/dialer-go/.agents/workflows/API_REFERENCE.md)
 > - 👉 [Índice do Repositório & Grafo de Componentes: `docs/MAP.md`](file:///home/marcio/ominichat/dialer-go/docs/MAP.md)
 > - 👉 [Regras Gerais e Governança de Agentes: `.agents/AGENTS.md`](file:///home/marcio/ominichat/dialer-go/.agents/AGENTS.md)
@@ -78,6 +79,10 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
     - É terminantemente proibido editar ou criar arquivos de configuração do Asterisk (`pjsip.conf`, `extensions.conf`, `amd.conf`, etc.) diretamente via acesso SSH/SCP ou manipulação manual de arquivos no servidor.
     - Todo o fluxo de configuração DEVE obrigatoriamente passar pela tabela `sip_data` no PostgreSQL (`file VARCHAR(60)` e `data TEXT`) por meio da API REST (`/api/v1/configs`).
     - Somente no momento em que a ação de "Aplicar" for explicitamente acionada (`?apply=true` ou `POST /api/v1/configs/apply`), o sistema escreve os arquivos físicos no diretório `/etc/asterisk` e executa os reloads no PBX via AMI.
+14. **Arquitetura de Filas Nativas Asterisk (`app_queue`), Music On Hold & Multi-Tenancy:**
+    - Toda distribuição preditiva opera via filas nativas do Asterisk nomeadas no padrão canônico `trim(tenant_id)-trim(campaign_id)` (ex: `default-12`).
+    - A espera na fila executa nativamente a classe MOH `dialer_hold` (`audio_espera.wav` a 8000 Hz) e o anúncio `queue-youarenext` (`vc_e_o_proximo.wav` a 8000 Hz).
+    - A entrega de áudio aos operadores ocorre com latência zero via canais `Local/<room>@livekit-agent-queue/n` com opção `m(dialer_hold)` para continuidade do áudio de fundo durante o ringing do LiveKit.
 
 ---
 
@@ -94,6 +99,7 @@ O **Dialer-Go** é o orquestrador e motor central de alta performance para sinal
 | **Atomicidade de Mailing** | **Transactional Outbox / Stored Procedures ACID** | Stored procedures PostgreSQL (`fn_audit_claim_predictive_batch`, `fn_audit_persist_predictive_result`) garantem consistência transacional sob concorrência massiva. | `database/schema.sql` |
 | **Notificação de Desfecho** | **Adapter & Observer Pattern** | Despacha eventos assíncronos de término e falha de chamada via Webhook HTTP com timeout estrito de 5s para o upstream. | `internal/core/call_notifier.go` |
 | **Gestão de Configuração Asterisk** | **Configuration Manager / Repository** | Gerencia arquivos de configuração (`pjsip.conf`, `extensions.conf`) via tabela `sip_data`, sincronizando com disco e enviando reloads via AMI. | `internal/core/sip_config_manager.go` |
+| **Provisionamento LiveKit SIP** | **Adapter Pattern** | Orquestra auto-provisionamento idempotente de Inbound Trunk e Dispatch Rule via API Twirp, auditando integridade no Healthcheck. | `internal/adapters/livekit/` |
 
 ---
 

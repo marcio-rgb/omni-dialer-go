@@ -134,3 +134,28 @@ func (r *ReportRepo) GetCallsSummary(ctx context.Context, tenantID string, start
 		},
 	}, nil
 }
+
+// Get10MinAbandonStats consulta agregada rápida na tabela cdrs para a janela deslizante de 10 minutos.
+//
+// @pattern Repository & Unit of Work
+// @governedBy docs/rules/TELEPHONY_POLICIES.md
+func (r *ReportRepo) Get10MinAbandonStats(ctx context.Context, tenantID, campaignID string) (abandoned, answered int64, err error) {
+	if r.pool == nil {
+		return 0, 0, fmt.Errorf("postgres: pool não inicializado")
+	}
+	query := `
+		SELECT 
+			COUNT(*) FILTER (WHERE disposition = 'ABANDONED') AS abandoned_calls,
+			COUNT(*) FILTER (WHERE disposition IN ('ANSWERED', 'DELIVERED', 'ABANDONED')) AS answered_calls
+		FROM cdrs
+		WHERE tenant_id = $1 
+		  AND created_at >= NOW() - INTERVAL '10 minutes'
+		  AND ($2::varchar = '' OR campaign_id = $2)
+	`
+	err = r.pool.QueryRow(ctx, query, tenantID, campaignID).Scan(&abandoned, &answered)
+	if err != nil {
+		return 0, 0, err
+	}
+	return abandoned, answered, nil
+}
+

@@ -38,6 +38,15 @@ func (m *mockAMI) TransferToLiveKit(ctx context.Context, channel string, agent *
 	return nil
 }
 
+func (m *mockAMI) QueueAdd(ctx context.Context, actionID, queue, iface, memberName string, penalty int, paused bool) error {
+	return nil
+}
+func (m *mockAMI) QueueRemove(ctx context.Context, actionID, queue, iface string) error {
+	return nil
+}
+func (m *mockAMI) QueuePause(ctx context.Context, actionID, queue, iface string, paused bool, reason string) error {
+	return nil
+}
 func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }
@@ -137,6 +146,15 @@ func (m *mockCache) ReleaseRoomLock(ctx context.Context, roomName string) error 
 }
 func (m *mockCache) PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error {
 	return nil
+}
+func (m *mockCache) ResetConsecutiveErrors(ctx context.Context, campaignID string) error {
+	return nil
+}
+func (m *mockCache) IncrementConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) {
+	return 0, nil
+}
+func (m *mockCache) GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) {
+	return 0, nil
 }
 
 
@@ -249,3 +267,47 @@ func TestManualEngine_ZeroNormalization_PhoneIntegrity(t *testing.T) {
 		})
 	}
 }
+
+func TestManualEngine_HangupCall(t *testing.T) {
+	ctx := context.Background()
+	ami := &mockAMI{}
+	cache := &mockCache{}
+	cm := NewChannelManager(100, 10, cache)
+	engine := NewManualEngine(ami, cm, &mockTrunkRepo{}, cache)
+
+	// Registra um canal ativo para simular chamada em andamento
+	agentID := "emerson"
+	callID := "call-manual-123"
+	ch := &domain.ActiveChannel{
+		ChannelID: callID,
+		TrunkID:   "trunk-1",
+		CallType:  domain.CallTypeManual,
+		Phone:     "11988887777",
+		AgentID:   &agentID,
+		TenantID:  "default",
+	}
+	_ = cm.AcquireSlot(ctx, ch, true)
+	cm.LinkAsteriskChannel(callID, "PJSIP/vivo-000001", "1790000000.1")
+
+	// Teste 1: Hangup por AgentID
+	resp, err := engine.HangupCall(ctx, &domain.HangupCallRequest{
+		AgentID: "emerson",
+		Cause:   16,
+	})
+	if err != nil {
+		t.Fatalf("HangupCall falhou: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("esperava sucesso, obteve %v", resp.Success)
+	}
+	if resp.Channel != "PJSIP/vivo-000001" {
+		t.Errorf("esperava canal PJSIP/vivo-000001, obteve %s", resp.Channel)
+	}
+
+	// Teste 2: Erro se identificador ausente
+	_, err = engine.HangupCall(ctx, &domain.HangupCallRequest{})
+	if err == nil {
+		t.Errorf("esperava erro por falta de identificador")
+	}
+}
+

@@ -14,6 +14,7 @@ type HealthHandler struct {
 	cache    ports.CachePort
 	ami      ports.AMIPort
 	channels *core.ChannelManager
+	livekit  ports.LiveKitPort
 }
 
 func NewHealthHandler(pool *pgxpool.Pool, cache ports.CachePort, ami ports.AMIPort, channels *core.ChannelManager) *HealthHandler {
@@ -23,6 +24,11 @@ func NewHealthHandler(pool *pgxpool.Pool, cache ports.CachePort, ami ports.AMIPo
 		ami:      ami,
 		channels: channels,
 	}
+}
+
+// SetLiveKitPort injeta a porta do LiveKit para telemetria da ponte SIP.
+func (h *HealthHandler) SetLiveKitPort(lk ports.LiveKitPort) {
+	h.livekit = lk
 }
 
 func (h *HealthHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -36,12 +42,18 @@ func (h *HealthHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		redisOK = err == nil
 	}
 
+	livekitOK := true
+	if h.livekit != nil {
+		ok, err := h.livekit.CheckSIPHealth(ctx)
+		livekitOK = err == nil && ok
+	}
+
 	activeGlob, activeHum, maxGlob, humQuota := 0, 0, 0, 0
 	if h.channels != nil {
 		activeGlob, activeHum, maxGlob, humQuota = h.channels.GetGlobalStats()
 	}
 
-	allOK := amiOK && dbOK && redisOK
+	allOK := amiOK && dbOK && redisOK && livekitOK
 	statusStr := "healthy"
 	httpCode := http.StatusOK
 	if !allOK {
@@ -57,6 +69,7 @@ func (h *HealthHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 			"asterisk_ami": amiOK,
 			"database":     dbOK,
 			"cache":        redisOK,
+			"livekit_sip":  livekitOK,
 		},
 		"telephony_capacity": map[string]int{
 			"active_global_channels": activeGlob,

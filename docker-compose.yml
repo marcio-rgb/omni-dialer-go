@@ -28,12 +28,24 @@ services:
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
-      - UPDATE_TIMESTAMP=1789635200
+      - LIVEKIT_URL=https://live.creditobr.org
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+      - UPDATE_TIMESTAMP=1790417850
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
     ports:
-      - "8081:8081"
+      - target: 8081
+        published: 8081
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -102,7 +114,7 @@ services:
 
   dialer-redis:
     image: redis:7-alpine
-    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru --save 60 1000
+    command: redis-server --maxmemory 2gb --maxmemory-policy volatile-lru --appendonly yes --save 60 1000
     networks:
       minha_rede:
         aliases:

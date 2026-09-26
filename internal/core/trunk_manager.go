@@ -89,6 +89,8 @@ func (tm *TrunkManager) eventListenerLoop(ctx context.Context) {
 				tm.handleUserEvent(ctx, evt.Attributes)
 			case "Newstate":
 				tm.handleNewstate(ctx, evt.Attributes)
+			case "AgentConnect":
+				tm.handleAgentConnect(ctx, evt.Attributes)
 			}
 		}
 	}

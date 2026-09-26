@@ -65,13 +65,56 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | `[pre-dial-vivo]` | Normalização de cabeçalhos SIP | Injeta `TRUNK_ID` no `CALLERID(num)`, `P-Asserted-Identity` e `User-Agent` antes do envio do INVITE. |
 | `[outbound-vivo]` | Rota externa direta | Utiliza prefixo `b(pre-dial-vivo^s^1)` no comando `Dial`. |
-| `[from-dialer-amd]` | Ponto de entrada preditivo / IA Direto | Inicia gravação estéreo `MixMonitor`, emite `UserEvent(CallAnswered)` e `UserEvent(PredictiveHuman)`, e encaminha diretamente para `${TARGET_ROOM}` (ex: `call_${CAMPAIGN_ID}_${LEAD_ID}` ou `${AGENT_ROOM}`) no endpoint local `livekit-sip` (:5062). |
-| `[triagem-amd]` | Triagem Ativa Full-Duplex | Atendimento imediato (`Answer`), disparo de `UserEvent(CallAnswered)` para marcação precisa de `answered_at`, `MixMonitor` em background (`b`), reprodução da saudação única natural `"Alô, tudo bem!?"` (`alo_tudo_bem.wav`) e escuta concorrente via EAGI Vosk (`FD 3`). Sem silêncio passivo (*dead air*). |
-| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-Name`, `X-Lead-CPF` e `X-Campaign-Id`. **Ressalva:** `${LEAD_NAME}` recebe estritamente o nome original completo com acentos (`leads.name`), enquanto `${AUDIO_NAME}` recebe o slug normalizado para áudios locais `.wav`. |
-| `[from-dialer-manual]` | Entrega de discagem manual | Disparo de `UserEvent(CallAnswered)` na conexão e roteamento da perna do cliente diretamente para a rota SIP do operador (`SIP_ROUTE`). |
-| `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Validação anti-corrida via `GROUP(livekit_rooms)=${AGENT_ROOM}` e `GROUP_COUNT(${AGENT_ROOM}@livekit_rooms) > 1`. Se a sala já possuir 1 chamada ativa, dispara `UserEvent(PredictiveRoomBusy)` e rejeita com `Hangup(17)` (User Busy). Se livre, a extensão `9999` conecta a chamada à sala `AGENT_ROOM` via tronco local co-localizado `livekit-sip` (`sip:127.0.0.1:5062`), com latência zero e suporte ao codec Opus. |
+| `[from-dialer-queue]` | Ponto de entrada preditivo com Fila Nativa | Gravação imediata `MixMonitor` no ms 0, `Answer()`, `Set(CHANNEL(musicclass)=dialer_hold)` e envio para `Queue(${TENANT_ID}-${CAMPAIGN_ID},t,,,15)`. Áudio contínuo de espera (`audio_espera.wav`) e aviso (`vc_e_o_proximo.wav`). |
+| `[livekit-agent-queue]` | Bridge Fila -> LiveKit WebRTC | Conecta o operador da fila à sala LiveKit via `Dial(PJSIP/${EXTEN}@livekit-sip,60,m(dialer_hold)b(predial-livekit-headers...))`. A flag `m(dialer_hold)` mantém a música de espera tocando para o cliente enquanto a sala toca para o operador. |
+| `[from-dialer-amd]` | Ponto de entrada preditivo / IA Direto | Inicia gravação estéreo `MixMonitor`, emite `UserEvent(CallAnswered)` e `UserEvent(PredictiveHuman)`, e encaminha diretamente para `${TARGET_ROOM}` no endpoint local `livekit-sip` (:5062). |
+| `[from-dialer-manual]` | Entrega de discagem manual direta | Gravação estéreo ms 0 (`MixMonitor`), disparo de `UserEvent(CallAnswered)` e roteamento da perna do cliente diretamente para a sala do operador via `Dial(${SIP_ROUTE},60,b(predial-livekit-headers...))`. |
+| `[predial-livekit-headers]` | Injeção de identidade para LiveKit | Injeta cabeçalhos SIP com suporte a argumentos explícitos `b(predial-livekit-headers^s^1(${PHONE},${LEAD_NAME},${LEAD_CPF},${CAMPAIGN_ID}))` ou variáveis de canal: `X-Lead-Phone`, `CALLERID(num)`, `CALLERID(name)`, `X-Lead-Name`, `X-Lead-CPF` e `X-Campaign-Id`. |
+| `[cos-all]` / `[cos-all-custom]` | Conferência e Tronco LiveKit | Validação anti-corrida via `GROUP(livekit_rooms)=${AGENT_ROOM}` e `GROUP_COUNT(${AGENT_ROOM}@livekit_rooms) > 1`. Conecta a chamada à sala `AGENT_ROOM` via tronco local co-localizado `livekit-sip` (`sip:84.247.135.255:5062`), com latência zero e suporte ao codec Opus. |
 
-### 3.2. Regra de Ouro do Atendimento Humano
+---
+
+## 3.2. Arquitetura de Filas Nativas Asterisk (`app_queue`), Music On Hold & Multi-Tenancy
+
+### 3.2.1. Padrão Canônico de Nomeação de Filas
+$$\mathbf{Nome\ da\ Fila} = \text{trim}(\text{tenant\_id}) + \text{"-"} + \text{trim}(\text{campaign\_id})$$
+* **Exemplo:** Tenant `default` e Campanha `12` $\rightarrow$ Fila: **`default-12`**
+* O discador isola as métricas, filas e distribuição de cada cliente em memória do Asterisk.
+
+### 3.2.2. Esquema de Template de Filas ([`mode/dialer/queues.conf`](file:///home/marcio/ecosystem/dialer-go/mode/dialer/queues.conf))
+```ini
+[dialer-queue-template](!)
+strategy = leastrecent
+timeout = 15
+wrapuptime = 0
+ringinuse = no
+joinempty = yes
+leavewhenempty = no
+reportholdtime = no
+announce-holdtime = no
+announce-frequency = 0
+musicclass = dialer_hold
+queue-youarenext = dialer/vc_e_o_proximo
+setinterfacevar = yes
+setqueuevar = yes
+setqueueentryvar = yes
+```
+
+### 3.2.3. Arquitetura de Áudios de Fila e Espera ([`mode/dialer/musiconhold.conf`](file:///home/marcio/ecosystem/dialer-go/mode/dialer/musiconhold.conf))
+1. **Áudio de Espera (`audio_espera.wav`):**
+   * Convertido para formato linear nativo **PCM 8000 Hz 16-bit mono** (`/var/lib/asterisk/moh/dialer_hold/audio_espera.wav`).
+   * Registrado na classe de Music On Hold **`dialer_hold`**.
+   * Toca para o cliente durante todo o tempo de espera na fila com **0% de overhead de CPU**.
+2. **Aviso de Próximo da Fila (`vc_e_o_proximo.mp3`):**
+   * Convertido para formato nativo **PCM 8000 Hz 16-bit mono** (`/var/lib/asterisk/sounds/dialer/vc_e_o_proximo.wav`).
+   * Configurado como parâmetro nativo **`queue-youarenext = dialer/vc_e_o_proximo`** da fila.
+   * Reproduzido em background sem atrasar em nenhum milissegundo a transferência da chamada.
+3. **Música Contínua durante Ringing do Atendente:**
+   * O comando `Dial()` no contexto `[livekit-agent-queue]` utiliza a opção **`m(dialer_hold)`**, garantindo que o cliente continue ouvindo a música de espera enquanto o Asterisk chama a sala WebRTC do operador no LiveKit.
+
+---
+
+### 3.3. Regra de Ouro do Atendimento Humano
 > [!IMPORTANT]
 > **Nunca derrubar chamadas humanas por dúvida:**  
 > Se o Vosk STT não detectar inequívoca caixa postal ou houver falha de socket (`VOSK_CONN_FALLBACK`), o dialplan **deve sempre assumir `HUMAN`**, notificando o discador e transferindo a ligação imediatamente ao operador. A penalidade de falso negativo (operador ouvir mensagem residual de operadora) é infinitamente menor do que a de falso positivo (derrubar um cliente interessado).

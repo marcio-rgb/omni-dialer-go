@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  asterisk_simulator:
+    image: andrius/asterisk:20-alpine
+    container_name: asterisk_simulator
+    restart: always
+    network_mode: host
+    volumes:
+      - ./extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk.conf:/etc/asterisk/asterisk.conf:ro
+      - ./modules.conf:/etc/asterisk/modules.conf:ro
+      - ./rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./logger.conf:/etc/asterisk/logger.conf:ro
+      - ./play_benchmark.py:/var/lib/asterisk/agi-bin/play_benchmark.py:ro
+      - /opt/simulator/sounds:/var/lib/asterisk/sounds/benchmark:ro
+      - /opt/simulator/logs:/var/log/asterisk
+    environment:
+      - TZ=America/Sao_Paulo
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'core show version' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

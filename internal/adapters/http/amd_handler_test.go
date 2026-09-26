@@ -31,6 +31,15 @@ func (m *mockAMI) TransferToLiveKit(ctx context.Context, channel string, agent *
 	return nil
 }
 
+func (m *mockAMI) QueueAdd(ctx context.Context, actionID, queue, iface, memberName string, penalty int, paused bool) error {
+	return nil
+}
+func (m *mockAMI) QueueRemove(ctx context.Context, actionID, queue, iface string) error {
+	return nil
+}
+func (m *mockAMI) QueuePause(ctx context.Context, actionID, queue, iface string, paused bool, reason string) error {
+	return nil
+}
 func (m *mockAMI) Hangup(ctx context.Context, actionID, channel string, cause int) error {
 	return nil
 }

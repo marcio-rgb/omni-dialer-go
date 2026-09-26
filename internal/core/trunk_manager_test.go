@@ -33,6 +33,10 @@ func (m *mockReportRepoForTM) ListCDRs(ctx context.Context, filter domain.CDRFil
 	return nil, nil
 }
 
+func (m *mockReportRepoForTM) Get10MinAbandonStats(ctx context.Context, tenantID, campaignID string) (abandoned, answered int64, err error) {
+	return 0, 0, nil
+}
+
 func (m *mockReportRepoForTM) GetCDRByID(ctx context.Context, tenantID, cdrID string) (*domain.CDR, error) {
 	return nil, nil
 }

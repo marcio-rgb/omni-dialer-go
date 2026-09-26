@@ -32,6 +32,7 @@ type HandlersConfig struct {
 	LeadBatch           *LeadBatchHandler
 	SIPConfig           *SIPConfigHandler
 	Instance            *InstanceHandler
+	Queue               *QueueHandler
 }
 
 func NewServer(port int, handlers HandlersConfig) *Server {
@@ -65,9 +66,10 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 				api.Post("/predictive/demand", handlers.Predictive.Demand)
 			}
 
-			// 2. Chamadas Manuais
+			// 2. Chamadas Manuais e Controle de Chamadas
 			if handlers.Manual != nil {
 				api.Post("/calls/manual", handlers.Manual.DialManual)
+				api.Post("/calls/hangup", handlers.Manual.Hangup)
 			}
 
 			// 3. Campanhas (CRUD), Refill, Ingestão de Leads, Toggle & Saturação
@@ -164,6 +166,18 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 					inst.Delete("/{id}", handlers.Instance.Delete)
 					inst.Post("/{id}/ping", handlers.Instance.Ping)
 				})
+			}
+
+			// 10. Gestão Dinâmica de Membros de Filas Asterisk (app_queue)
+			if handlers.Queue != nil {
+				api.Route("/queues", func(q chi.Router) {
+					q.Post("/presence", handlers.Queue.SetPresence)
+					q.Post("/members", handlers.Queue.AddMember)
+					q.Delete("/members", handlers.Queue.RemoveMember)
+					q.Post("/members/pause", handlers.Queue.PauseMember)
+					q.Get("/{queue_id}/members", handlers.Queue.GetQueueMembers)
+				})
+				api.Post("/queue/presence", handlers.Queue.SetPresence)
 			}
 		})
 	})

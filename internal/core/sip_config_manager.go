@@ -128,6 +128,10 @@ func (m *SIPConfigManager) ApplyConfigs(ctx context.Context, filenames []string,
 	_ = os.MkdirAll(m.asteriskConfDir, 0755)
 
 	for _, cfg := range filesToApply {
+		if len(strings.TrimSpace(cfg.Data)) == 0 {
+			log.Printf("[WARN] [SIP-CONFIG] Ignorando arquivo vazio '%s' para evitar corrupcao de configuracao no Asterisk.", cfg.File)
+			continue
+		}
 		targetPath := filepath.Join(m.asteriskConfDir, cfg.File)
 		err := os.WriteFile(targetPath, []byte(cfg.Data), 0644)
 		if err != nil {
