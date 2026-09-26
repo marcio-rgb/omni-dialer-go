@@ -8,43 +8,34 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function getGitHubConfig() {
-    const envPaths = [
-        path.join(__dirname, '../ecosystem/.env'),
-        path.join(__dirname, '../ecosystem/.ENV'),
-        path.join(__dirname, '.env')
-    ];
+    let token = process.env.GITHUB_TOKEN || '';
 
-    for (const envPath of envPaths) {
-        if (fs.existsSync(envPath)) {
-            const content = fs.readFileSync(envPath, 'utf8');
-            const tokenMatch = content.match(/GITHUB_TOKEN\s*=\s*["']?([^"'\r\n]+)/);
-            if (tokenMatch) {
-                return {
-                    token: tokenMatch[1].trim(),
-                    owner: 'marcio-rgb',
-                    repo: 'omni-dialer-go'
-                };
+    // Permite passar token como argumento se começar com ghp_ ou github_pat_
+    if (process.argv[2] && (process.argv[2].startsWith('ghp_') || process.argv[2].startsWith('github_pat_'))) {
+        token = process.argv[2].trim();
+    }
+
+    if (!token) {
+        const envPaths = [
+            path.join(__dirname, '.env'),
+            path.join(__dirname, '../ecosystem/.env'),
+            path.join(__dirname, '../ecosystem/.ENV')
+        ];
+
+        for (const envPath of envPaths) {
+            if (fs.existsSync(envPath)) {
+                const content = fs.readFileSync(envPath, 'utf8');
+                const tokenMatch = content.match(/GITHUB_TOKEN\s*=\s*["']?([^"'\r\n]+)/);
+                if (tokenMatch) {
+                    token = tokenMatch[1].trim();
+                    break;
+                }
             }
         }
     }
 
-    try {
-        const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
-        const match = remoteUrl.match(/https:\/\/(?:([^:@]+):)?([^@]+)@github\.com\/([^\/]+)\/([^\.]+)/);
-        if (match) {
-            const token = match[2].startsWith('ghp_') || match[2].startsWith('github_pat_') ? match[2] : (match[1] || match[2]);
-            return {
-                token: token,
-                owner: match[3],
-                repo: match[4]
-            };
-        }
-    } catch (err) {
-        // Ignored
-    }
-
     return {
-        token: process.env.GITHUB_TOKEN || '',
+        token: token,
         owner: 'marcio-rgb',
         repo: 'omni-dialer-go'
     };
@@ -56,25 +47,18 @@ function getLocalEnvConfig() {
         portainerKey: 'ptr_IpehOIRXktqikYl3J7xGRkQEphHYU1mRNRRftORmXE0='
     };
 
-    const envPaths = [
-        path.join(__dirname, '../ecosystem/.env'),
-        path.join(__dirname, '../ecosystem/.ENV'),
-        path.join(__dirname, '.env')
-    ];
+    const envPath = path.join(__dirname, '.env');
+    if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf8');
+        const urlMatch = content.match(/PORTAINER_URL(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
+        const keyMatch = content.match(/PORTAINER_KEY(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
 
-    for (const envPath of envPaths) {
-        if (fs.existsSync(envPath)) {
-            const content = fs.readFileSync(envPath, 'utf8');
-            const urlMatch = content.match(/PORTAINER_URL(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
-            const keyMatch = content.match(/PORTAINER_KEY(?:_PROD)?\s*=\s*["']?([^"'\r\n]+)/);
-
-            if (urlMatch) {
-                let u = urlMatch[1].trim().replace(/\/$/, '');
-                if (!u.endsWith('/api')) u += '/api';
-                config.portainerUrl = u;
-            }
-            if (keyMatch) config.portainerKey = keyMatch[1].trim();
+        if (urlMatch) {
+            let u = urlMatch[1].trim().replace(/\/$/, '');
+            if (!u.endsWith('/api')) u += '/api';
+            config.portainerUrl = u;
         }
+        if (keyMatch) config.portainerKey = keyMatch[1].trim();
     }
     return config;
 }
@@ -116,52 +100,76 @@ async function main() {
         process.exit(1);
     }
 
-    // --- PASSO 2: Commit e push das alterações ---
-    console.log('\n🔄 2. Realizando commit e push para o GitHub...');
-    let commitMessage = process.argv[2] || '';
-    if (!commitMessage) {
-        try {
-            const diffFiles = execSync('git diff --name-only', { encoding: 'utf8' })
-                .trim()
-                .split('\n')
-                .filter(f => f.trim().length > 0 && !f.includes('docker-compose.yml'));
-
-            if (diffFiles.length > 0) {
-                commitMessage = `feat(prod): auto-deploy - updated ${diffFiles.map(f => path.basename(f)).slice(0, 5).join(', ')}`;
-            } else {
-                commitMessage = 'chore: trigger production dialer-go deploy';
-            }
-        } catch (err) {
-            commitMessage = 'chore: trigger production dialer-go deploy';
-        }
+    // --- PASSO 2: Commit e push das alterações para o GitHub ---
+    console.log('\n🔄 2. Sincronizando e publicando no GitHub (marcio-rgb/omni-dialer-go)...');
+    const gitConfig = getGitHubConfig();
+    if (!gitConfig.token) {
+        console.error('❌ GITHUB_TOKEN não configurado no .env ou via parâmetro.');
+        process.exit(1);
     }
 
+    let commitMessage = '';
+    if (process.argv[2] && (process.argv[2].startsWith('ghp_') || process.argv[2].startsWith('github_pat_'))) {
+        commitMessage = process.argv[3] || '';
+    } else {
+        commitMessage = process.argv[2] || '';
+    }
+
+    if (!commitMessage) {
+        commitMessage = `feat(prod): auto-deploy dialer-go update timestamp ${epoch}`;
+    }
+
+    const deployRepoDir = path.join('/tmp', 'omni-dialer-go-repo');
+    const repoAuthUrl = `https://x-access-token:${gitConfig.token}@github.com/${gitConfig.owner}/${gitConfig.repo}.git`;
+
     try {
-        try {
-            execSync('git config user.email || git config --global user.email "marcio@fastmob.com.br"');
-            execSync('git config user.name || git config --global user.name "marcio-rgb"');
-        } catch (gitErr) {
-            // Ignored
+        if (!fs.existsSync(path.join(deployRepoDir, '.git'))) {
+            console.log(`   - Clonando repositório GitHub em ${deployRepoDir}...`);
+            execSync(`rm -rf "${deployRepoDir}"`);
+            execSync(`git clone --depth 1 "${repoAuthUrl}" "${deployRepoDir}"`, { stdio: 'inherit' });
+        } else {
+            console.log(`   - Atualizando repositório local em ${deployRepoDir}...`);
+            execSync(`git -C "${deployRepoDir}" remote set-url origin "${repoAuthUrl}"`);
+            execSync(`git -C "${deployRepoDir}" fetch origin main`, { stdio: 'inherit' });
+            execSync(`git -C "${deployRepoDir}" reset --hard origin/main`, { stdio: 'inherit' });
         }
 
-        execSync('git add .', { stdio: 'inherit' });
-        const status = execSync('git status --porcelain', { encoding: 'utf8' }).trim();
-        if (status.length > 0) {
-            execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, { stdio: 'inherit' });
+        // Sincroniza arquivos de dialer-go para o repositório de publicação
+        console.log('   - Sincronizando arquivos do projeto...');
+        execSync(`rsync -av --delete \
+            --exclude='.git' \
+            --exclude='.env*' \
+            --exclude='*.env' \
+            --exclude='*.ENV' \
+            --exclude='temp/' \
+            --exclude='dialer-bin' \
+            --exclude='node_modules' \
+            --exclude='.cache' \
+            "${__dirname}/" "${deployRepoDir}/"`, { stdio: 'inherit' });
+
+        execSync(`git -C "${deployRepoDir}" config user.email "marcio@fastmob.com.br"`);
+        execSync(`git -C "${deployRepoDir}" config user.name "marcio-rgb"`);
+
+        execSync(`git -C "${deployRepoDir}" add .`, { stdio: 'inherit' });
+        const ghStatus = execSync(`git -C "${deployRepoDir}" status --porcelain`, { encoding: 'utf8' }).trim();
+        if (ghStatus.length > 0) {
+            execSync(`git -C "${deployRepoDir}" commit -m "${commitMessage.replace(/"/g, '\\"')}"`, { stdio: 'inherit' });
+        } else {
+            console.log('   ℹ️ Nenhuma alteração detectada para commit.');
         }
+
         console.log('📤 Enviando alterações para o repositório GitHub (main)...');
-        execSync('git push origin main', { stdio: 'inherit' });
+        execSync(`git -C "${deployRepoDir}" push origin main`, { stdio: 'inherit' });
     } catch (err) {
         console.error('❌ Falha ao realizar commit/push das alterações:', err.message);
         process.exit(1);
     }
 
-    const commitSha = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-    console.log(`📌 Commit SHA atual: ${commitSha}`);
+    const commitSha = execSync(`git -C "${deployRepoDir}" rev-parse HEAD`, { encoding: 'utf8' }).trim();
+    console.log(`📌 Commit SHA publicado no GitHub: ${commitSha}`);
 
     // --- PASSO 3: Monitorar workflow do GitHub Actions ---
     console.log('\n⏳ 3. Aguardando workflow do GitHub Actions compilar a imagem...');
-    const gitConfig = getGitHubConfig();
     let buildSuccess = false;
     const startTime = Date.now();
 
@@ -218,6 +226,7 @@ async function main() {
     // --- PASSO 4: Deploy da Stack no Portainer de Produção ---
     if (buildSuccess) {
         console.log('\n🐳 4. Verificando Stack no Portainer de produção...');
+        console.log(`   - Alvo Portainer: ${envConfig.portainerUrl}`);
         const composeContent = fs.readFileSync(composePath, 'utf8');
         const endpointId = 3;
         const swarmId = '8e1q9spcjxxfgnumvlld04eh3';
@@ -257,10 +266,10 @@ async function main() {
                 throw new Error(`Erro ao listar stacks: HTTP ${resList.status}`);
             }
             const stacks = await resList.json();
-            const existingStack = stacks.find(s => s.Name === stackName);
+            const existingStack = Array.isArray(stacks) ? stacks.find(s => s.Name === stackName || s.Id === 1) : null;
 
             if (existingStack) {
-                console.log(`   - Stack existente encontrada (ID: ${existingStack.Id}). Atualizando...`);
+                console.log(`   - Stack existente encontrada (ID: ${existingStack.Id}, Nome: ${existingStack.Name}). Atualizando...`);
                 const resUpdate = await fetch(`${envConfig.portainerUrl}/stacks/${existingStack.Id}?endpointId=${endpointId}`, {
                     method: 'PUT',
                     headers: {
@@ -313,15 +322,16 @@ async function main() {
                 });
                 if (resServices.ok) {
                     const services = await resServices.json();
-                    const dialerService = services.find(s => s.Spec && s.Spec.Name === 'omni-dialer-go_dialer-go');
+                    const dialerService = services.find(s => s.Spec && (s.Spec.Name === 'dialer-go_dialer-go' || s.Spec.Name === 'omni-dialer-go_dialer-go'));
                     if (dialerService) {
                         const resTasks = await fetch(`${envConfig.portainerUrl}/endpoints/${endpointId}/docker/tasks?filters=${encodeURIComponent(JSON.stringify({ service: [dialerService.ID] }))}`, {
                             headers: { 'X-API-Key': envConfig.portainerKey }
                         });
                         if (resTasks.ok) {
                             const tasks = await resTasks.json();
+                            tasks.sort((a, b) => new Date(b.UpdatedAt) - new Date(a.UpdatedAt));
                             const latestTask = tasks[0];
-                            console.log(`📊 Status do serviço dialer-go: ${latestTask ? latestTask.Status.State : 'indisponível'} (${latestTask ? latestTask.Status.Message : ''})`);
+                            console.log(`📊 Status do serviço dialer-go: ${latestTask ? latestTask.Status.State : 'indisponível'} (${latestTask ? (latestTask.Status.Message || latestTask.Status.Err || '') : ''})`);
                         }
                     }
                 }

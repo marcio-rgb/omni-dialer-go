@@ -10,14 +10,14 @@ services:
           - dialer-go
     environment:
       - PORT=8081
-      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@postgres:5432/dialer_db?sslmode=disable
-      - REDIS_ADDR=dialer-redis:6379
+      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@84.247.135.255:5896/dialer_db?sslmode=disable
+      - REDIS_ADDR=84.247.135.255:6379
       - REDIS_DB=0
-      - ASTERISK_AMI_HOST=asterisk
+      - ASTERISK_AMI_HOST=84.247.135.255
       - ASTERISK_AMI_PORT=5038
       - ASTERISK_AMI_USER=Omnichat
       - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
-      - VOSK_SERVER_URL=ws://dialer-vosk:2700
+      - VOSK_SERVER_URL=ws://84.247.135.255:2700
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=creditobr
       - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
@@ -31,7 +31,7 @@ services:
       - LIVEKIT_URL=https://live.creditobr.org
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
-      - UPDATE_TIMESTAMP=1790417850
+      - UPDATE_TIMESTAMP=1790419824
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
