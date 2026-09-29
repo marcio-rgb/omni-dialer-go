@@ -31,7 +31,7 @@ services:
       - LIVEKIT_URL=https://live.creditobr.org
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
-      - UPDATE_TIMESTAMP=1790671013
+      - UPDATE_TIMESTAMP=1790673041
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
