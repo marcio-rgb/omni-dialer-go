@@ -16,14 +16,56 @@ import (
 // @pattern Strategy / Facade (Agent Queue Control)
 // @governedBy docs/rules/TELEPHONY_POLICIES.md
 type AgentQueueManager struct {
-	ami   ports.AMIPort
-	cache ports.CachePort
+	ami       ports.AMIPort
+	cache     ports.CachePort
+	agentRepo ports.AgentRepository
 }
 
 func NewAgentQueueManager(ami ports.AMIPort, cache ports.CachePort) *AgentQueueManager {
 	return &AgentQueueManager{
 		ami:   ami,
 		cache: cache,
+	}
+}
+
+// SetAgentRepository injeta o repositório de agentes para gravação da timeline em tenant_agent_history.
+func (m *AgentQueueManager) SetAgentRepository(repo ports.AgentRepository) {
+	m.agentRepo = repo
+}
+
+func (m *AgentQueueManager) recordHistory(ctx context.Context, tenantID, agentID, campaignID, status, action, reason, room, callID string) {
+	if m.agentRepo == nil || agentID == "" {
+		return
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	var campPtr, reasonPtr, roomPtr, callPtr *string
+	if campaignID != "" {
+		campPtr = &campaignID
+	}
+	if reason != "" {
+		reasonPtr = &reason
+	}
+	if room != "" {
+		roomPtr = &room
+	}
+	if callID != "" {
+		callPtr = &callID
+	}
+	h := &domain.TenantAgentHistory{
+		TenantID:    tenantID,
+		AgentID:     agentID,
+		CampaignID:  campPtr,
+		Status:      status,
+		Action:      action,
+		Reason:      reasonPtr,
+		LiveKitRoom: roomPtr,
+		CallID:      callPtr,
+		StartedAt:   time.Now(),
+	}
+	if err := m.agentRepo.RecordHistory(ctx, h); err != nil {
+		log.Printf("[WARN] [QUEUE-MGR] Falha ao registrar timeline de agente %s: %v", agentID, err)
 	}
 }
 
@@ -37,23 +79,8 @@ func (m *AgentQueueManager) AddMember(ctx context.Context, req *domain.QueueMemb
 	}
 
 	queueName := domain.FormatQueueName(req.TenantID, req.CampaignID)
-
-	roomName := req.AgentID
-	if req.LiveKitRoom != "" {
-		roomName = req.LiveKitRoom
-	} else if strings.Contains(req.SIPRoute, "sip:") {
-		parts := strings.Split(req.SIPRoute, "sip:")
-		if len(parts) > 1 {
-			sub := strings.Split(parts[1], "@")[0]
-			if sub != "" {
-				roomName = sub
-			}
-		}
-	} else if req.SIPRoute != "" && !strings.HasPrefix(req.SIPRoute, "PJSIP/") {
-		roomName = req.SIPRoute
-	}
-
-	iface := fmt.Sprintf("Local/%s@livekit-agent-queue/n", roomName)
+	roomName := formatAgentRoom(req.AgentID, req.LiveKitRoom, req.SIPRoute)
+	iface := formatAgentQueueInterface(req.AgentID, req.LiveKitRoom, req.SIPRoute)
 	actionID := fmt.Sprintf("qadd-%s-%s-%d", req.CampaignID, req.AgentID, time.Now().UnixMilli())
 
 	if m.ami != nil && m.ami.IsConnected() {
@@ -69,7 +96,14 @@ func (m *AgentQueueManager) AddMember(ctx context.Context, req *domain.QueueMemb
 			AgentID:     req.AgentID,
 			LiveKitRoom: roomName,
 		}
+		_ = m.cache.RemoveAgentFromQueues(ctx, req.AgentID)
 		_ = m.cache.PushIdleAgent(ctx, agentData)
+	}
+
+	if req.Paused {
+		m.recordHistory(ctx, req.TenantID, req.AgentID, req.CampaignID, "PAUSED", "add_paused", "", roomName, "")
+	} else {
+		m.recordHistory(ctx, req.TenantID, req.AgentID, req.CampaignID, "AVAILABLE", "add", "", roomName, "")
 	}
 
 	return nil
@@ -86,12 +120,7 @@ func (m *AgentQueueManager) RemoveMember(ctx context.Context, req *domain.QueueM
 		queueName = domain.FormatQueueName(req.TenantID, req.CampaignID)
 	}
 
-	roomName := req.AgentID
-	if req.LiveKitRoom != "" {
-		roomName = req.LiveKitRoom
-	}
-
-	iface := fmt.Sprintf("Local/%s@livekit-agent-queue/n", roomName)
+	iface := formatAgentQueueInterface(req.AgentID, req.LiveKitRoom, "")
 	actionID := fmt.Sprintf("qrem-%s-%s-%d", req.CampaignID, req.AgentID, time.Now().UnixMilli())
 
 	if m.ami != nil && m.ami.IsConnected() {
@@ -105,6 +134,8 @@ func (m *AgentQueueManager) RemoveMember(ctx context.Context, req *domain.QueueM
 	if m.cache != nil {
 		_ = m.cache.RemoveAgentFromQueues(ctx, req.AgentID)
 	}
+
+	m.recordHistory(ctx, req.TenantID, req.AgentID, req.CampaignID, "OFFLINE", "remove", "", "", "")
 
 	return nil
 }
@@ -120,20 +151,25 @@ func (m *AgentQueueManager) PauseMember(ctx context.Context, req *domain.QueueMe
 		queueName = domain.FormatQueueName(req.TenantID, req.CampaignID)
 	}
 
-	roomName := req.AgentID
-	if req.LiveKitRoom != "" {
-		roomName = req.LiveKitRoom
-	}
-
-	iface := fmt.Sprintf("Local/%s@livekit-agent-queue/n", roomName)
+	roomName := formatAgentRoom(req.AgentID, req.LiveKitRoom, "")
+	iface := formatAgentQueueInterface(req.AgentID, req.LiveKitRoom, "")
 	actionID := fmt.Sprintf("qpause-%s-%s-%d", req.CampaignID, req.AgentID, time.Now().UnixMilli())
 
 	if m.ami != nil && m.ami.IsConnected() {
 		if err := m.ami.QueuePause(ctx, actionID, queueName, iface, req.Paused, req.Reason); err != nil {
 			log.Printf("[WARN] [QUEUE-MGR] Falha ao alterar pausa do membro %s na fila %s via AMI: %v", req.AgentID, queueName, err)
-			return err
+			// Auto-cura: se despausando e membro não existe na fila Asterisk, adiciona o membro imediatamente!
+			if !req.Paused && queueName != "" {
+				addActID := fmt.Sprintf("qadd-heal-%s-%s-%d", req.CampaignID, req.AgentID, time.Now().UnixMilli())
+				if addErr := m.ami.QueueAdd(ctx, addActID, queueName, iface, req.AgentID, 0, false); addErr != nil {
+					log.Printf("[WARN] [QUEUE-MGR] Falha na auto-adição de membro %s na fila %s: %v", req.AgentID, queueName, addErr)
+				} else {
+					log.Printf("[INFO] [QUEUE-MGR] Membro %s auto-adicionado à fila %s com sucesso no Asterisk.", req.AgentID, queueName)
+				}
+			}
+		} else {
+			log.Printf("[INFO] [QUEUE-MGR] Membro %s na fila %s pausa definida como %v (motivo: %s).", req.AgentID, queueName, req.Paused, req.Reason)
 		}
-		log.Printf("[INFO] [QUEUE-MGR] Membro %s na fila %s pausa definida como %v (motivo: %s).", req.AgentID, queueName, req.Paused, req.Reason)
 	}
 
 	if m.cache != nil {
@@ -141,12 +177,19 @@ func (m *AgentQueueManager) PauseMember(ctx context.Context, req *domain.QueueMe
 			// Se pausado (Tabulação, Pausa ou Negociação), remove do pool de ociosos do discador
 			_ = m.cache.RemoveAgentFromQueues(ctx, req.AgentID)
 		} else {
-			// Se despausado (Disponível/Pronto), recoloca no pool de ociosos
+			// Se despausado (Disponível/Pronto), recoloca no pool de ociosos garantindo unicidade
+			_ = m.cache.RemoveAgentFromQueues(ctx, req.AgentID)
 			_ = m.cache.PushIdleAgent(ctx, &domain.AgentRedisData{
 				AgentID:     req.AgentID,
 				LiveKitRoom: roomName,
 			})
 		}
+	}
+
+	if req.Paused {
+		m.recordHistory(ctx, req.TenantID, req.AgentID, req.CampaignID, "PAUSED", "pause", req.Reason, roomName, "")
+	} else {
+		m.recordHistory(ctx, req.TenantID, req.AgentID, req.CampaignID, "AVAILABLE", "unpause", "", roomName, "")
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"dialer-go/internal/core"
@@ -33,11 +34,20 @@ func NewPredictiveHandler(engine *core.PredictiveEngine) *PredictiveHandler {
 func (h *PredictiveHandler) Demand(w http.ResponseWriter, r *http.Request) {
 	var req domain.PredictiveDemandRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [DEMAND] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [DEMAND] Tenant: %q, Campaign: %q, Aggressiveness: %v, MinChannels: %d, AvailableAgentsCount: %d (From: %s)",
+		req.TenantID, req.CampaignID, req.Aggressiveness, req.MinChannelsPerAgent, len(req.AvailableAgents), r.RemoteAddr)
+	for i, ag := range req.AvailableAgents {
+		log.Printf("[PARTNER-IN] [DEMAND] Agent[%d]: ID=%s, SIPRoute=%s, Priority=%d, IdleSec=%d",
+			i, ag.AgentID, ag.SIPRoute, ag.PriorityOrder, ag.IdleTimeSeconds)
+	}
+
 	if req.TenantID == "" || req.CampaignID == "" {
+		log.Printf("[PARTNER-IN] [DEMAND] [MISSING_FIELDS] tenant_id ou campaign_id ausente de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_REQUIRED_FIELDS", "tenant_id e campaign_id são obrigatórios").WriteJSON(w)
 		return
 	}

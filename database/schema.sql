@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS trunks (
     qualify_timeout NUMERIC(4,2) NOT NULL DEFAULT 3.00,
     max_channels INTEGER NOT NULL DEFAULT 30,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    amd_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,6 +132,11 @@ CREATE TABLE IF NOT EXISTS cdrs (
     recording_file VARCHAR(512),
     recording_url VARCHAR(512),
     transcription TEXT,
+    lead_id BIGINT,
+    lead_name VARCHAR(255),
+    lead_cpf VARCHAR(32),
+    amd_status VARCHAR(32),
+    amd_cause VARCHAR(64),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     initiated_at TIMESTAMP WITH TIME ZONE,
     answered_at TIMESTAMP WITH TIME ZONE,
@@ -144,6 +150,37 @@ ON cdrs (tenant_id, created_at, disposition, sip_status, hangup_cause);
 -- Índice Textual GIN para busca analítica em transcrições de voz
 CREATE INDEX IF NOT EXISTS idx_cdrs_transcription_search 
 ON cdrs USING gin (to_tsvector('portuguese', COALESCE(transcription, '')));
+
+CREATE INDEX IF NOT EXISTS idx_cdrs_lead_cpf ON cdrs(lead_cpf);
+CREATE INDEX IF NOT EXISTS idx_cdrs_lead_id ON cdrs(lead_id);
+
+-- 5.1. Índices Avançados para Contact Center & CRM (Performance de Consulta Paginada)
+
+-- Índice composto para auditoria de produtividade do operador (TMA, relatórios por agente)
+CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_agent_created
+ON cdrs (tenant_id, agent_id, created_at DESC)
+WHERE agent_id IS NOT NULL;
+
+-- Índice composto para performance de campanha discadora
+CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_campaign_created
+ON cdrs (tenant_id, campaign_id, created_at DESC)
+WHERE campaign_id IS NOT NULL;
+
+-- Índice para busca rápida por telefone com suporte a LIKE prefix (varchar_pattern_ops)
+CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_phone
+ON cdrs (tenant_id, phone varchar_pattern_ops, created_at DESC);
+
+-- Índice parcial para chamadas com gravação de áudio disponível
+CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_recordings
+ON cdrs (tenant_id, created_at DESC)
+WHERE recording_url IS NOT NULL AND recording_url != '';
+
+ALTER TABLE trunks ADD COLUMN IF NOT EXISTS amd_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_id BIGINT;
+ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_name VARCHAR(255);
+ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_cpf VARCHAR(32);
+ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS amd_status VARCHAR(32);
+ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS amd_cause VARCHAR(64);
 
 -- ============================================================================
 -- 6. STORED PROCEDURES DE INTELIGÊNCIA PREDITIVA & TRANSAÇÕES ACID
@@ -430,3 +467,45 @@ CREATE TABLE IF NOT EXISTS instances (
 
 CREATE INDEX IF NOT EXISTS idx_instances_tenant ON instances(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_instances_mode ON instances(mode);
+
+-- ============================================================================
+-- 11. TABELA DE CADASTRO SOBERANO DE AGENTES
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS tenants_agents (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
+    agent_id VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(128) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_tenants_agents_tenant_agent UNIQUE (tenant_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_agents_lookup ON tenants_agents(tenant_id, agent_id);
+
+-- ============================================================================
+-- 12. TABELA DE HISTÓRICO TEMPORAL DE PRESENÇA E ESTADOS DO AGENTE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS tenant_agent_history (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
+    agent_id VARCHAR(64) NOT NULL,
+    campaign_id VARCHAR(64),
+    status VARCHAR(32) NOT NULL,
+    action VARCHAR(32) NOT NULL,
+    reason VARCHAR(128),
+    livekit_room VARCHAR(128),
+    call_id VARCHAR(64),
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP WITH TIME ZONE,
+    duration_seconds INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_hist_tenant_agent_started ON tenant_agent_history(tenant_id, agent_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hist_tenant_status_started ON tenant_agent_history(tenant_id, status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hist_agent_id ON tenant_agent_history(agent_id);
+

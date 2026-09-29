@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -145,11 +146,29 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		webhookURL = &req.WebhookURL
 	}
 
+	leadName := req.LeadName
+	if leadName == "" {
+		leadName = req.Name
+	}
+	leadCPF := req.LeadCPF
+	if leadCPF == "" {
+		leadCPF = req.CPF
+	}
+	var leadIDPtr *int64
+	if req.LeadID != "" {
+		if lid, err := strconv.ParseInt(req.LeadID, 10, 64); err == nil && lid > 0 {
+			leadIDPtr = &lid
+		}
+	}
+
 	activeChan := &domain.ActiveChannel{
 		ChannelID:  callID,
 		TrunkID:    trunkID,
 		TenantID:   req.TenantID,
 		Phone:      destPhone,
+		LeadID:     leadIDPtr,
+		Name:       leadName,
+		CPF:        leadCPF,
 		CallType:   domain.CallTypeManual,
 		AgentID:    &req.AgentID,
 		SIPRoute:   &req.SIPRoute,
@@ -185,42 +204,87 @@ func (me *ManualEngine) DialManual(ctx context.Context, req *domain.ManualCallRe
 		}
 	}
 
-	leadName := req.LeadName
-	if leadName == "" {
-		leadName = req.Name
-	}
-	leadCPF := req.LeadCPF
-	if leadCPF == "" {
-		leadCPF = req.CPF
+	trunkAMD := "0"
+	if trunk != nil && trunk.AMDEnabled {
+		trunkAMD = "1"
 	}
 
 	vars := map[string]string{
-		"CALL_ID":      callID,
-		"__CALL_ID":    callID,
-		"TENANT_ID":    req.TenantID,
-		"__TENANT_ID":  req.TenantID,
-		"AGENT_ID":     req.AgentID,
-		"__AGENT_ID":   req.AgentID,
-		"CALL_TYPE":    "MANUAL",
-		"__CALL_TYPE":  "MANUAL",
-		"SIP_ROUTE":    sipRoute,
-		"__SIP_ROUTE":  sipRoute,
-		"PHONE":        destPhone,
-		"__PHONE":      destPhone,
-		"LEAD_NAME":    leadName,
-		"__LEAD_NAME":  leadName,
-		"LEAD_CPF":     leadCPF,
-		"__LEAD_CPF":   leadCPF,
-		"TRUNK_ID":     trunkID,
-		"__TRUNK_ID":   trunkID,
+		"CALL_ID":             callID,
+		"__CALL_ID":           callID,
+		"TENANT_ID":           req.TenantID,
+		"__TENANT_ID":         req.TenantID,
+		"AGENT_ID":            req.AgentID,
+		"__AGENT_ID":          req.AgentID,
+		"CALL_TYPE":           "MANUAL",
+		"__CALL_TYPE":         "MANUAL",
+		"SIP_ROUTE":           sipRoute,
+		"__SIP_ROUTE":         sipRoute,
+		"PHONE":               destPhone,
+		"__PHONE":             destPhone,
+		"LEAD_ID":             req.LeadID,
+		"__LEAD_ID":           req.LeadID,
+		"LEAD_NAME":           leadName,
+		"__LEAD_NAME":         leadName,
+		"LEAD_CPF":            leadCPF,
+		"__LEAD_CPF":          leadCPF,
+		"TRUNK_ID":            trunkID,
+		"__TRUNK_ID":          trunkID,
+		"TRUNK_AMD_ENABLED":   trunkAMD,
+		"__TRUNK_AMD_ENABLED": trunkAMD,
 	}
 	if trunk != nil && trunk.UserAgent != nil && *trunk.UserAgent != "" {
 		vars["TRUNK_USER_AGENT"] = *trunk.UserAgent
 	}
 
+	now := time.Now()
+	if me.cache != nil {
+		initEvt := &domain.CDREvent{
+			CallID:      callID,
+			TenantID:    req.TenantID,
+			TrunkUsed:   trunkID,
+			Phone:       destPhone,
+			LeadID:      leadIDPtr,
+			LeadName:    &leadName,
+			LeadCPF:     &leadCPF,
+			AgentID:     &req.AgentID,
+			CallType:    domain.CallTypeManual,
+			Type:        domain.CDREventInitiated,
+			StartedAt:   now,
+			InitiatedAt: &now,
+			Timestamp:   now.Unix(),
+		}
+		_ = me.cache.PublishCDREvent(ctx, initEvt)
+	}
+
 	// Dispara para o contexto de entrega direta ao operador usando Exten 's'
 	err = me.ami.Originate(ctx, actionID, dialChannel, "from-dialer-manual", "s", 1, 30, callerID, req.TenantID, vars)
 	if err != nil {
+		if me.cache != nil {
+			causeVal := 16
+			failEvt := &domain.CDREvent{
+				CallID:          callID,
+				TenantID:        req.TenantID,
+				TrunkUsed:       trunkID,
+				Phone:           destPhone,
+				LeadID:          leadIDPtr,
+				LeadName:        &leadName,
+				LeadCPF:         &leadCPF,
+				AgentID:         &req.AgentID,
+				CallType:        domain.CallTypeManual,
+				Disposition:     domain.DispositionFailed,
+				HangupCause:     &causeVal,
+				Type:            domain.CDREventOriginateFailed,
+				StartedAt:       now,
+				InitiatedAt:     &now,
+				EndedAt:         &now,
+				Timestamp:       now.Unix(),
+				DurationSeconds: 0,
+				BillsecSeconds:  0,
+				RingSeconds:     0,
+			}
+			_ = me.cache.PublishCDREvent(ctx, failEvt)
+		}
 		me.channels.ReleaseSlot(ctx, callID)
 		return nil, domain.NewErrInternal(fmt.Sprintf("Falha ao originar chamada manual no PBX: %s", err.Error()))
 	}

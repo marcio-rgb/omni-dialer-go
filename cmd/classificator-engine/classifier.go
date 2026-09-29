@@ -254,7 +254,17 @@ func normalizeText(s string) string {
 	return strings.Join(strings.Fields(sb.String()), " ")
 }
 
+var intSlicePool = sync.Pool{
+	New: func() any {
+		s := make([]int, 0, 64)
+		return &s
+	},
+}
+
 func levenshtein(a, b string) int {
+	if a == b || strings.EqualFold(a, b) {
+		return 0
+	}
 	ra, rb := []rune(a), []rune(b)
 	la, lb := len(ra), len(rb)
 	if la == 0 {
@@ -268,7 +278,16 @@ func levenshtein(a, b string) int {
 		la, lb = lb, la
 	}
 
-	row := make([]int, la+1)
+	ptr := intSlicePool.Get().(*[]int)
+	defer intSlicePool.Put(ptr)
+	row := *ptr
+	if cap(row) < la+1 {
+		row = make([]int, la+1)
+		*ptr = row
+	} else {
+		row = row[:la+1]
+	}
+
 	for i := 0; i <= la; i++ {
 		row[i] = i
 	}
@@ -305,7 +324,7 @@ func fuzzyContainsPhrase(textWords []string, targetWords []string, maxDistance i
 
 	for i := 0; i <= len(textWords)-windowSize; i++ {
 		window := strings.Join(textWords[i:i+windowSize], " ")
-		if window == targetJoined {
+		if window == targetJoined || strings.EqualFold(window, targetJoined) {
 			return true
 		}
 		if maxDistance > 0 && levenshtein(window, targetJoined) <= maxDistance {

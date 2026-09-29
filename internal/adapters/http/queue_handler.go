@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"dialer-go/internal/core"
@@ -28,11 +29,16 @@ func NewQueueHandler(queueMgr *core.AgentQueueManager) *QueueHandler {
 func (h *QueueHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	var req domain.QueueMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [QUEUE-ADD] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [QUEUE-ADD] Tenant: %q, Campaign: %q, Agent: %q, Room: %q, SIPRoute: %q, Paused: %v, Penalty: %d (From: %s)",
+		req.TenantID, req.CampaignID, req.AgentID, req.LiveKitRoom, req.SIPRoute, req.Paused, req.Penalty, r.RemoteAddr)
+
 	if req.CampaignID == "" || req.AgentID == "" {
+		log.Printf("[PARTNER-IN] [QUEUE-ADD] [MISSING_FIELDS] campaign_id ou agent_id ausente de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_REQUIRED_FIELDS", "campaign_id e agent_id são obrigatórios").WriteJSON(w)
 		return
 	}
@@ -63,11 +69,16 @@ func (h *QueueHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 func (h *QueueHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	var req domain.QueueMemberRemoveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [QUEUE-REMOVE] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [QUEUE-REMOVE] Tenant: %q, Campaign: %q, Agent: %q, Room: %q (From: %s)",
+		req.TenantID, req.CampaignID, req.AgentID, req.LiveKitRoom, r.RemoteAddr)
+
 	if req.CampaignID == "" || req.AgentID == "" {
+		log.Printf("[PARTNER-IN] [QUEUE-REMOVE] [MISSING_FIELDS] campaign_id ou agent_id ausente de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_REQUIRED_FIELDS", "campaign_id e agent_id são obrigatórios").WriteJSON(w)
 		return
 	}
@@ -97,11 +108,16 @@ func (h *QueueHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 func (h *QueueHandler) PauseMember(w http.ResponseWriter, r *http.Request) {
 	var req domain.QueueMemberPauseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [QUEUE-PAUSE] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [QUEUE-PAUSE] Tenant: %q, Campaign: %q, Agent: %q, Room: %q, Paused: %v, Reason: %q (From: %s)",
+		req.TenantID, req.CampaignID, req.AgentID, req.LiveKitRoom, req.Paused, req.Reason, r.RemoteAddr)
+
 	if req.CampaignID == "" || req.AgentID == "" {
+		log.Printf("[PARTNER-IN] [QUEUE-PAUSE] [MISSING_FIELDS] campaign_id ou agent_id ausente de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_REQUIRED_FIELDS", "campaign_id e agent_id são obrigatórios").WriteJSON(w)
 		return
 	}
@@ -157,11 +173,16 @@ func (h *QueueHandler) GetQueueMembers(w http.ResponseWriter, r *http.Request) {
 func (h *QueueHandler) SetPresence(w http.ResponseWriter, r *http.Request) {
 	var req domain.QueuePresenceEvent
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [PRESENCE] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Corpo JSON da requisição é inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [PRESENCE] Action: %q, Tenant: %q, Campaign: %q, Agent: %q, Room: %q, SIPRoute: %q, Paused: %v, Reason: %q (From: %s)",
+		req.Action, req.TenantID, req.CampaignID, req.AgentID, req.LiveKitRoom, req.SIPRoute, req.Paused, req.Reason, r.RemoteAddr)
+
 	if req.Action == "" || req.AgentID == "" {
+		log.Printf("[PARTNER-IN] [PRESENCE] [MISSING_FIELDS] action ou agent_id ausente de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_REQUIRED_FIELDS", "action e agent_id são obrigatórios").WriteJSON(w)
 		return
 	}

@@ -36,16 +36,16 @@ func (r *TrunkRepo) Create(ctx context.Context, t *domain.Trunk) error {
 		INSERT INTO trunks (
 			id, tenant_id, name, direction, registration_mode, host, port, outbound_proxy, tech_prefix,
 			auth_username, auth_password, auth_realm, from_user, from_domain, user_agent, transport, nat_mode,
-			direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled
+			direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled, amd_enabled
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
 		)
 	`
 
 	_, err = r.pool.Exec(ctx, query,
 		t.ID, t.TenantID, t.Name, t.Direction, t.RegistrationMode, t.Host, t.Port, t.OutboundProxy, t.TechPrefix,
 		t.AuthUsername, t.AuthPassword, t.AuthRealm, t.FromUser, t.FromDomain, t.UserAgent, t.Transport, t.NATMode,
-		t.DirectMedia, codecsJSON, t.DTMFMode, t.QualifyFrequency, t.QualifyTimeout, t.MaxChannels, t.IsEnabled,
+		t.DirectMedia, codecsJSON, t.DTMFMode, t.QualifyFrequency, t.QualifyTimeout, t.MaxChannels, t.IsEnabled, t.AMDEnabled,
 	)
 	return err
 }
@@ -58,7 +58,7 @@ func (r *TrunkRepo) GetByID(ctx context.Context, tenantID, trunkID string) (*dom
 	query := `
 		SELECT id, tenant_id, name, direction, registration_mode, host, port, outbound_proxy, tech_prefix,
 		       auth_username, auth_password, auth_realm, from_user, from_domain, user_agent, transport, nat_mode,
-		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled,
+		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled, amd_enabled,
 		       created_at, updated_at
 		FROM trunks
 		WHERE id = $1 AND (tenant_id = $2 OR tenant_id = 'default')
@@ -70,7 +70,7 @@ func (r *TrunkRepo) GetByID(ctx context.Context, tenantID, trunkID string) (*dom
 	err := r.pool.QueryRow(ctx, query, trunkID, tenantID).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Direction, &t.RegistrationMode, &t.Host, &t.Port, &t.OutboundProxy, &t.TechPrefix,
 		&t.AuthUsername, &t.AuthPassword, &t.AuthRealm, &t.FromUser, &t.FromDomain, &t.UserAgent, &t.Transport, &t.NATMode,
-		&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled,
+		&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled, &t.AMDEnabled,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
 
@@ -93,7 +93,7 @@ func (r *TrunkRepo) ListByTenant(ctx context.Context, tenantID string) ([]*domai
 	query := `
 		SELECT id, tenant_id, name, direction, registration_mode, host, port, outbound_proxy, tech_prefix,
 		       auth_username, auth_password, auth_realm, from_user, from_domain, user_agent, transport, nat_mode,
-		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled,
+		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled, amd_enabled,
 		       created_at, updated_at
 		FROM trunks
 		WHERE tenant_id = $1 OR tenant_id = 'default'
@@ -113,7 +113,7 @@ func (r *TrunkRepo) ListByTenant(ctx context.Context, tenantID string) ([]*domai
 		err := rows.Scan(
 			&t.ID, &t.TenantID, &t.Name, &t.Direction, &t.RegistrationMode, &t.Host, &t.Port, &t.OutboundProxy, &t.TechPrefix,
 			&t.AuthUsername, &t.AuthPassword, &t.AuthRealm, &t.FromUser, &t.FromDomain, &t.UserAgent, &t.Transport, &t.NATMode,
-			&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled,
+			&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled, &t.AMDEnabled,
 			&t.CreatedAt, &t.UpdatedAt,
 		)
 		if err != nil {
@@ -141,15 +141,15 @@ func (r *TrunkRepo) Update(ctx context.Context, t *domain.Trunk) error {
 			name = $3, direction = $4, registration_mode = $5, host = $6, port = $7, outbound_proxy = $8,
 			tech_prefix = $9, auth_username = $10, auth_password = $11, auth_realm = $12, from_user = $13,
 			from_domain = $14, user_agent = $15, transport = $16, nat_mode = $17, codecs = $18, dtmf_mode = $19,
-			qualify_frequency = $20, qualify_timeout = $21, max_channels = $22, is_enabled = $23,
-			updated_at = $24
+			qualify_frequency = $20, qualify_timeout = $21, max_channels = $22, is_enabled = $23, amd_enabled = $24,
+			updated_at = $25
 		WHERE id = $1 AND tenant_id = $2
 	`
 
 	res, err := r.pool.Exec(ctx, query,
 		t.ID, t.TenantID, t.Name, t.Direction, t.RegistrationMode, t.Host, t.Port, t.OutboundProxy,
 		t.TechPrefix, t.AuthUsername, t.AuthPassword, t.AuthRealm, t.FromUser, t.FromDomain, t.UserAgent, t.Transport,
-		t.NATMode, codecsJSON, t.DTMFMode, t.QualifyFrequency, t.QualifyTimeout, t.MaxChannels, t.IsEnabled,
+		t.NATMode, codecsJSON, t.DTMFMode, t.QualifyFrequency, t.QualifyTimeout, t.MaxChannels, t.IsEnabled, t.AMDEnabled,
 		time.Now(),
 	)
 	if err != nil {
@@ -186,7 +186,7 @@ func (r *TrunkRepo) ListAllEnabled(ctx context.Context) ([]*domain.Trunk, error)
 	query := `
 		SELECT id, tenant_id, name, direction, registration_mode, host, port, outbound_proxy, tech_prefix,
 		       auth_username, auth_password, auth_realm, from_user, from_domain, user_agent, transport, nat_mode,
-		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled,
+		       direct_media, codecs, dtmf_mode, qualify_frequency, qualify_timeout, max_channels, is_enabled, amd_enabled,
 		       created_at, updated_at
 		FROM trunks
 		WHERE is_enabled = true
@@ -205,7 +205,7 @@ func (r *TrunkRepo) ListAllEnabled(ctx context.Context) ([]*domain.Trunk, error)
 		err := rows.Scan(
 			&t.ID, &t.TenantID, &t.Name, &t.Direction, &t.RegistrationMode, &t.Host, &t.Port, &t.OutboundProxy, &t.TechPrefix,
 			&t.AuthUsername, &t.AuthPassword, &t.AuthRealm, &t.FromUser, &t.FromDomain, &t.UserAgent, &t.Transport, &t.NATMode,
-			&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled,
+			&t.DirectMedia, &codecsJSON, &t.DTMFMode, &t.QualifyFrequency, &t.QualifyTimeout, &t.MaxChannels, &t.IsEnabled, &t.AMDEnabled,
 			&t.CreatedAt, &t.UpdatedAt,
 		)
 		if err != nil {

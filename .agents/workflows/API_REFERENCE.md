@@ -99,6 +99,14 @@ Em caso de falha de validação, inexistência de recurso, saturação ou erro i
 | `DELETE`| `/api/v1/queues/members` | Remove operador da fila Asterisk (app_queue) e Redis | Whitelist + JSON Body |
 | `POST` | `/api/v1/queues/members/pause` | Pausa ou retoma operador na fila Asterisk | Whitelist + JSON Body |
 | `GET` | `/api/v1/queues/{queue_id}/members` | Consulta status da fila no Asterisk | Whitelist |
+| `GET` | `/api/v1/agents` | Lista operadores cadastrados na tabela soberana `tenants_agents` | Whitelist + `X-Tenant-Id` |
+| `POST` | `/api/v1/agents` | Cadastra ou atualiza operador (`tenants_agents`) | Whitelist + JSON Body |
+| `POST` | `/api/v1/agents/batch` | Cadastra ou atualiza operadores em lote | Whitelist + JSON Body |
+| `GET` | `/api/v1/agents/{id}` | Recupera dados de cadastro de um operador | Whitelist + `X-Tenant-Id` |
+| `DELETE`| `/api/v1/agents/{id}` | Remove um operador cadastrado | Whitelist + `X-Tenant-Id` |
+| `GET` | `/api/v1/agents/{id}/history` | Consulta histórico temporal de transições de presença (`tenant_agent_history`) | Whitelist + `X-Tenant-Id` |
+| `GET` | `/api/v1/reports/agent-performance` | Relatório consolidado de produtividade com `LEFT JOIN tenants_agents` | Whitelist + Query Params |
+
 
 ---
 
@@ -715,18 +723,32 @@ Endpoint de alta performance protegido por uma camada de **Buffer de Cache no Re
 ---
 
 ### 3.9.1. Listagem Paginada de CDRs (`GET /api/v1/cdrs` / `GET /api/v1/reports/cdrs`)
-Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminhos do Asterisk (`recording_file`) e URLs de streaming direto (`recording_url`) gerados pelo discador. Permite que serviços externos (como o Omnichat e dashboards) operem 100% desacoplados de bases internas.
+Endpoint canônico para consulta de chamadas (CDRs) com alta performance para Contact Centers, CRM e auditoria telefônica. Possui suporte a busca inteligente (discriminator pattern entre B-Tree e GIN FTS), paginação escalável via `has_more` (fetch `limit + 1`), controle de custo de `COUNT(*)`, ordenação dinâmica segura e suporte a formatos flexíveis de data.
 
 #### Parâmetros de Consulta (Query Params):
 | Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
 | :--- | :--- | :--- | :--- | :--- |
 | `tenant_id` | `string` | **Sim** | - | Identificador do locatário (ou via header `X-Tenant-Id`). |
-| `campaign_id`| `string` | Não | - | Filtra chamadas de uma campanha específica. |
-| `phone` | `string` | Não | - | Filtra chamadas por número de telefone. |
-| `disposition`| `string` | Não | - | Filtra por desfecho (`ANSWERED`, `DELIVERED`, `VOICEMAIL`, etc.). |
-| `search` / `q`| `string`| Não | - | Busca textual livre em número de telefone ou transcrição Vosk. |
-| `start_date` | `ISO 8601`| Não | - | Filtro temporal inicial (`created_at >= start_date`). |
-| `end_date` | `ISO 8601`| Não | - | Filtro temporal final (`created_at <= end_date`). |
+| `campaign_id`| `string` | Não | - | Filtra chamadas de uma campanha discadora específica. |
+| `agent_id` | `string` | Não | - | Filtra chamadas atendidas por um operador/agente específico. |
+| `call_type` | `string` | Não | - | Tipo da chamada: `PREDICTIVE`, `MANUAL`, `RECEPTIVE`. |
+| `trunk_used` | `string` | Não | - | Tronco telefônico utilizado na terminação da chamada. |
+| `lead_cpf` | `string` | Não | - | CPF do lead (com ou sem pontuação). |
+| `lead_id` | `integer` | Não | - | Identificador numérico do lead na campanha. |
+| `phone` | `string` | Não | - | Número de telefone discado. |
+| `disposition`| `string` | Não | - | Desfecho da chamada: singular (`ANSWERED`) ou múltiplos separados por vírgula (`ANSWERED,DELIVERED`) ou parâmetros repetidos (`?disposition=A&disposition=B`). |
+| `amd_status` | `string` | Não | - | Resultado da triagem AMD (`HUMAN`, `MACHINE`, `NOTSURE`, `HANGUP`). |
+| `has_recording`| `boolean`| Não | - | `true` para chamadas com gravação de áudio; `false` para chamadas sem gravação. |
+| `min_billsec`| `integer`| Não | - | Duração mínima faturada (em segundos). |
+| `max_billsec`| `integer`| Não | - | Duração máxima faturada (em segundos). |
+| `min_duration`| `integer`| Não | - | Duração total mínima da chamada (em segundos). |
+| `max_duration`| `integer`| Não | - | Duração total máxima da chamada (em segundos). |
+| `search` / `q`| `string` | Não | - | **Busca Inteligente:** se numérico/formatado (telefone/CPF), utiliza índice B-Tree com `varchar_pattern_ops` e suporte a DDI 55. Se textual, executa FTS via `websearch_to_tsquery` na transcrição de voz. |
+| `start_date` | `ISO 8601`| Não | `now - 7d` | Início do período. Aceita `2026-09-01T00:00:00Z`, `2026-09-01 00:00:00` ou `2026-09-01` (`00:00:00 UTC`). |
+| `end_date` | `ISO 8601`| Não | `now` | Fim do período. Aceita `2026-09-08T23:59:59Z` ou `2026-09-08` (`23:59:59 UTC`). Teto: 31 dias sem filtro seletivo; 90 dias com filtro seletivo (`phone`, `lead_cpf`, `lead_id`, `agent_id`). |
+| `sort_by` | `string` | Não | `created_at` | Campo de ordenação (todos os 25 campos canônicos): `id`, `tenant_id`, `campaign_id`, `agent_id`, `trunk_used`, `phone`, `lead_name`, `lead_cpf`, `lead_id`, `call_type`, `disposition`, `sip_status`, `hangup_cause`, `amd_status`, `amd_cause`, `duration_seconds`, `billsec_seconds`, `ring_seconds`, `created_at`, `initiated_at`, `answered_at`, `ended_at`, `recording_file`, `recording_url`, `transcription`. |
+| `sort_order` | `string` | Não | `desc` | Direção da ordenação: `desc` (decrescente, padrão) ou `asc` (crescente). Trata campos nulos de forma limpa via `NULLS LAST`. |
+| `include_total`| `boolean`| Não | `true` | Se `true`, calcula `total` e `total_pages` via `COUNT(*)`. Se `false`, pula o `COUNT(*)` retornando `total: null` e `total_pages: null` com máxima velocidade. |
 | `page` | `integer` | Não | `1` | Número da página (mínimo: 1). |
 | `limit` | `integer` | Não | `20` | Quantidade de registros por página (máximo: 100). |
 
@@ -739,6 +761,7 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
     "page": 1,
     "limit": 20,
     "total_pages": 1,
+    "has_more": false,
     "cdrs": [
       {
         "id": "pred-550e8400-e29b-41d4-a716-446655440000",
@@ -757,6 +780,11 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
         "recording_file": "/var/spool/asterisk/monitor/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
         "recording_url": "https://dialer.creditobr.org/api/v1/recordings/2026/09/14/063000-PRED-11999998888-1726302600.12.wav",
         "transcription": "alo bom dia quem fala e da central",
+        "lead_id": 10452,
+        "lead_name": "CARLOS DA SILVA",
+        "lead_cpf": "12345678900",
+        "amd_status": "HUMAN",
+        "amd_cause": "HUMAN_SPEECH",
         "created_at": "2026-09-14T06:30:00Z",
         "initiated_at": "2026-09-14T06:30:00Z",
         "answered_at": "2026-09-14T06:30:05Z",
@@ -766,6 +794,14 @@ Endpoint canônico para consulta de chamadas (CDRs) detalhadas, contendo caminho
   }
 }
 ```
+
+#### Respostas de Erro Mapeadas (Problem Details - RFC 7807):
+- **`400 Bad Request`** (`MISSING_TENANT_ID`): O locatário não foi especificado via query param nem via header `X-Tenant-Id`.
+- **`422 Unprocessable Entity`** (`INVALID_DATE_FORMAT`): Formato temporal não reconhecido (deve ser ISO 8601 ou YYYY-MM-DD).
+- **`422 Unprocessable Entity`** (`INVALID_DATE_RANGE`): A data `start_date` é posterior a `end_date`.
+- **`422 Unprocessable Entity`** (`DATE_RANGE_TOO_BROAD`): Janela temporal excede 31 dias (sem filtros seletivos) ou 90 dias (com filtros seletivos).
+- **`422 Unprocessable Entity`** (`INVALID_BILLSEC_RANGE`): `min_billsec` é superior a `max_billsec`.
+- **`422 Unprocessable Entity`** (`INVALID_DURATION_RANGE`): `min_duration` é superior a `max_duration`.
 
 ---
 
@@ -878,6 +914,7 @@ Cadastra novo tronco telefônico com suporte a autenticação por registro ou IP
 | `transport` | `string` | Não | `UDP` | `UDP`, `TCP` ou `TLS`. |
 | `codecs` | `array[string]`| Não | `["alaw", "ulaw"]` | Codecs permitidos (`alaw`, `ulaw`, `g729`, `opus`, `gsm`). |
 | `max_channels` | `integer` | Não | `30` | Cota máxima de ligações simultâneas autorizadas. |
+| `amd_enabled` | `boolean` | Não | `true` | Ativa/desativa triagem inteligente de AMD (Vosk/Áudio). Quando `false`, chamadas não executam triagem nem reproduzem a saudação WAV, conectando direto à fila (ideal para operadoras VoIP que já entregam a fala do cliente). |
 | `is_enabled` | `boolean` | Não | `true` | Status de ativação do tronco. |
 
 #### Resposta de Sucesso (`201 Created`):
@@ -1550,6 +1587,292 @@ Controla as transições de estado do atendente entre **Disponível**, **Tabula�
   }
 }
 ```
+
+---
+
+### 7.3. Adicionar Operador à Fila (`POST /api/v1/queues/members`)
+*Também disponível via alias `POST /api/v1/queue/members`.*
+
+Adiciona dinamicamente um atendente à fila do Asterisk PBX (`app_queue`) e atualiza o estado no Redis.
+
+- **Headers:** `Content-Type: application/json`
+- **Request Body (`domain.QueueMemberRequest`):**
+```json
+{
+  "tenant_id": "default",
+  "campaign_id": "12",
+  "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a",
+  "livekit_room": "sala_agente_c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a",
+  "penalty": 0,
+  "paused": false
+}
+```
+- **Campos:**
+  - `tenant_id` *(string, opcional, default: `"default"`)*: Locatário.
+  - `campaign_id` *(string, obrigatório)*: Identificador da campanha/fila.
+  - `agent_id` *(string, obrigatório)*: Identificador único do operador.
+  - `livekit_room` *(string, opcional)*: Nome da sala WebRTC/LiveKit (sanitizado automaticamente como `sala_agente_<agent_id>`).
+  - `penalty` *(integer, opcional, default: `0`)*: Peso de prioridade na fila Asterisk.
+  - `paused` *(boolean, opcional, default: `false`)*: Se entra já pausado.
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Operador adicionado à fila com sucesso",
+    "campaign_id": "12",
+    "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a",
+    "paused": false
+  }
+}
+```
+
+---
+
+### 7.4. Remover Operador da Fila (`DELETE /api/v1/queues/members`)
+*Também disponível via alias `DELETE /api/v1/queue/members`.*
+
+Remove o atendente da fila do Asterisk PBX e purga seu registro do cache Redis.
+
+- **Headers:** `Content-Type: application/json`
+- **Request Body (`domain.QueueMemberRemoveRequest`):**
+```json
+{
+  "tenant_id": "default",
+  "campaign_id": "12",
+  "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a"
+}
+```
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Operador removido da fila com sucesso",
+    "campaign_id": "12",
+    "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a"
+  }
+}
+```
+
+---
+
+### 7.5. Pausar / Despausar Operador na Fila (`POST /api/v1/queues/members/pause`)
+*Também disponível via aliases `POST /api/v1/queue/members/pause`, `POST /api/v1/queues/pause` e `POST /api/v1/queue/pause`.*
+
+Modifica o estado de pausa do atendente na fila Asterisk e sincroniza o pool de agentes ociosos no Redis. Possui mecanismo de autocura (se o operador não constava na fila ao ser despausado, ele é adicionado automaticamente).
+
+- **Headers:** `Content-Type: application/json`
+- **Request Body (`domain.QueueMemberPauseRequest`):**
+```json
+{
+  "tenant_id": "default",
+  "campaign_id": "12",
+  "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a",
+  "paused": false,
+  "reason": "Disponivel_Para_Atendimento"
+}
+```
+- **Campos:**
+  - `paused` *(boolean, obrigatório)*: `true` para pausar; `false` para retomar (despausar).
+  - `reason` *(string, opcional)*: Motivo da pausa ou retorno.
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Status de pausa do operador atualizado com sucesso",
+    "campaign_id": "12",
+    "agent_id": "c6e4605a-a1e1-4bf0-8c6c-e61b78b5467a",
+    "paused": false,
+    "reason": "Disponivel_Para_Atendimento"
+  }
+}
+```
+
+---
+
+### 7.6. Consultar Status da Fila (`GET /api/v1/queues/{queue_id}/members`)
+*Também disponível via alias `GET /api/v1/queue/{queue_id}/members`.*
+
+Consulta o status de uma fila telefônica no PBX Asterisk.
+
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "queue_id": "12",
+    "status": "active"
+  }
+}
+```
+
+---
+
+## 8. Gestão Soberana de Agentes & Produtividade
+
+### 8.1. Cadastrar / Atualizar Agente (`POST /api/v1/agents`)
+Cadastra ou atualiza um atendente na tabela soberana `tenants_agents`.
+
+- **Headers:** `Content-Type: application/json`, `X-Tenant-Id: default`
+- **Request Body:**
+```json
+{
+  "tenant_id": "default",
+  "agent_id": "101",
+  "agent_name": "Marcio Silva",
+  "is_active": true
+}
+```
+- **Resposta (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "tenant_id": "default",
+    "agent_id": "101",
+    "agent_name": "Marcio Silva",
+    "is_active": true,
+    "created_at": "2026-09-28T22:20:00Z",
+    "updated_at": "2026-09-28T22:20:00Z"
+  }
+}
+```
+
+---
+
+### 8.2. Cadastrar Agentes em Lote (`POST /api/v1/agents/batch`)
+Cadastra ou atualiza uma lista de operadores em única requisição.
+
+- **Request Body:**
+```json
+{
+  "tenant_id": "default",
+  "agents": [
+    { "agent_id": "101", "agent_name": "Marcio Silva", "is_active": true },
+    { "agent_id": "102", "agent_name": "Emerson Tech", "is_active": true }
+  ]
+}
+```
+
+---
+
+### 8.3. Listar Agentes (`GET /api/v1/agents`)
+Lista os operadores cadastrados com paginação.
+
+- **Query Params:** `tenant_id`, `page` (padrão 1), `limit` (padrão 50), `is_active` (`true`/`false`)
+- **Resposta (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "total": 2,
+    "page": 1,
+    "limit": 50,
+    "agents": [
+      {
+        "id": 1,
+        "tenant_id": "default",
+        "agent_id": "101",
+        "agent_name": "Marcio Silva",
+        "is_active": true,
+        "created_at": "2026-09-28T22:20:00Z",
+        "updated_at": "2026-09-28T22:20:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 8.4. Consultar Histórico Temporal de Presença (`GET /api/v1/agents/{id}/history`)
+Retorna todas as transições de estado do operador (`AVAILABLE`, `PAUSED`, `IN_CALL`, `OFFLINE`) gravadas em `tenant_agent_history`.
+
+- **Query Params:** `start_date`, `end_date`, `limit`
+- **Resposta (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "agent_id": "101",
+    "start_date": "2026-09-28T00:00:00Z",
+    "end_date": "2026-09-28T23:59:59Z",
+    "history": [
+      {
+        "id": 15,
+        "tenant_id": "default",
+        "agent_id": "101",
+        "status": "AVAILABLE",
+        "action": "unpause",
+        "started_at": "2026-09-28T14:30:00Z",
+        "ended_at": "2026-09-28T18:00:00Z",
+        "duration_seconds": 12600
+      },
+      {
+        "id": 14,
+        "tenant_id": "default",
+        "agent_id": "101",
+        "status": "PAUSED",
+        "action": "pause",
+        "reason": "ALMOCO",
+        "started_at": "2026-09-28T13:30:00Z",
+        "ended_at": "2026-09-28T14:30:00Z",
+        "duration_seconds": 3600
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 8.5. Relatório Consolidado de Produtividade (`GET /api/v1/reports/agent-performance`)
+Consolida métricas de ligações (`cdrs`) e tempos de presença (`tenant_agent_history`), utilizando **`LEFT JOIN` com `tenants_agents`** e fallback para `'Não Informado'`.
+
+- **Query Params:**
+  - `start_date` *(RFC3339)*: Início da janela de análise.
+  - `end_date` *(RFC3339)*: Fim da janela de análise.
+  - `agent_id` *(string, opcional)*: Filtro por agente específico.
+  - `tenant_id` *(string, opcional)*: Identificador do tenant.
+- **Resposta de Sucesso (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": {
+    "tenant_id": "default",
+    "start_date": "2026-09-28T00:00:00Z",
+    "end_date": "2026-09-28T23:59:59Z",
+    "agents": [
+      {
+        "agent_id": "101",
+        "agent_name": "Marcio Silva",
+        "total_calls": 85,
+        "answered_calls": 42,
+        "calls_over_40s": 27,
+        "total_talk_time_seconds": 3840,
+        "average_talk_time_seconds": 91,
+        "total_available_seconds": 21600,
+        "total_paused_seconds": 3600
+      },
+      {
+        "agent_id": "999",
+        "agent_name": "Não Informado",
+        "total_calls": 12,
+        "answered_calls": 6,
+        "calls_over_40s": 3,
+        "total_talk_time_seconds": 450,
+        "average_talk_time_seconds": 75,
+        "total_available_seconds": 0,
+        "total_paused_seconds": 0
+      }
+    ]
+  }
+}
+```
+
 
 
 

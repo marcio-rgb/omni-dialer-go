@@ -58,7 +58,9 @@ func (c *AMIClient) QueueRemove(ctx context.Context, actionID, queue, iface stri
 	var sb strings.Builder
 	sb.WriteString("Action: QueueRemove\r\n")
 	sb.WriteString(fmt.Sprintf("ActionID: %s\r\n", actionID))
-	sb.WriteString(fmt.Sprintf("Queue: %s\r\n", queue))
+	if queue != "" {
+		sb.WriteString(fmt.Sprintf("Queue: %s\r\n", queue))
+	}
 	sb.WriteString(fmt.Sprintf("Interface: %s\r\n\r\n", iface))
 
 	ch := c.registerAction(actionID)

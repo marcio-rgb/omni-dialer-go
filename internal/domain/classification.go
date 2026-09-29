@@ -68,3 +68,16 @@ type WireEventMessage struct {
 	Confidence    float64                `json:"confidence,omitempty"`
 	VerdictDetail *ClassificationVerdict `json:"verdict_detail,omitempty"`
 }
+
+// CallMetadata encapsula os metadados associados ao UUID da chamada correlacionada via Redis.
+//
+// @pattern Value Object / DTO
+// @governedBy .agents/ARCHITECT.md
+type CallMetadata struct {
+	CallUUID   string `json:"call_uuid"`
+	LeadID     string `json:"lead_id"`
+	CampaignID string `json:"campaign_id"`
+	TenantID   string `json:"tenant_id,omitempty"`
+	Phone      string `json:"phone"`
+	Room       string `json:"room,omitempty"`
+}

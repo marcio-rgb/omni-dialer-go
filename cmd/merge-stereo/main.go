@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 /**
@@ -195,6 +196,12 @@ func main() {
 	}
 	if rxFile != outFile {
 		_ = os.Remove(rxFile)
+	}
+
+	// Purga qualquer arquivo mono temporário residual (.tmp.wav)
+	tmpMono := strings.TrimSuffix(outFile, ".wav") + ".tmp.wav"
+	if tmpMono != outFile {
+		_ = os.Remove(tmpMono)
 	}
 
 	fmt.Printf("Sucesso: Audio estereo gerado em %s (Taxa: %d Hz)\n", outFile, sampleRate)

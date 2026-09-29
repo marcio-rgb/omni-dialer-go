@@ -22,24 +22,49 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", getEnvInt("PORT", 2801), "Porta de escuta do classificator engine (2801, 2802, 2803)")
+	port := flag.Int("port", getEnvInt("PORT", 2801), "Porta de escuta HTTP/WS do engine (2801, 2802, 2803)")
+	audioSocketPort := flag.Int("audiosocket-port", getEnvInt("AUDIOSOCKET_PORT", 9092), "Porta de escuta do AudioSocket Asterisk nativo")
 	voskURL := flag.String("vosk-url", getEnvStr("VOSK_SERVER_URL", "ws://127.0.0.1:2700"), "URL do servidor Vosk ASR")
 	maxDurSec := flag.Float64("max-dur", getEnvFloat("VOSK_MAX_DURATION_SEC", 3.5), "Duracao maxima da janela em segundos")
+	redisAddr := flag.String("redis-addr", getEnvStr("REDIS_ADDR", "127.0.0.1:6379"), "Endereco do servidor Redis")
+	redisPass := flag.String("redis-pass", getEnvStr("REDIS_PASSWORD", ""), "Senha do servidor Redis")
+	redisDB := flag.Int("redis-db", getEnvInt("REDIS_DB", 0), "Database Redis")
+	maxSlots := flag.Int("max-slots", getEnvInt("MAX_CONCURRENT_SESSIONS", 40), "Limite maximo de sessoes concorrentes")
 	flag.Parse()
 
 	addr := fmt.Sprintf(":%d", *port)
 	classifier := NewSemanticClassifier()
+	sem := make(chan struct{}, *maxSlots)
+
+	// Inicia o servidor AudioSocket nativo do Asterisk na porta :9092
+	audioSocketAddr := fmt.Sprintf(":%d", *audioSocketPort)
+	audioSocketServer := NewAudioSocketServer(
+		audioSocketAddr,
+		*voskURL,
+		classifier,
+		*maxDurSec,
+		*redisAddr,
+		*redisPass,
+		*redisDB,
+		*maxSlots,
+	)
+	if err := audioSocketServer.Start(); err != nil {
+		log.Printf("[WARN] AudioSocket não iniciado em %s: %v", audioSocketAddr, err)
+	}
 
 	mux := http.NewServeMux()
 
-	// Endpoint de Health-Check para o Router
+	// Endpoint de Health-Check com telemetria de slots
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":   "UP",
-			"port":     *port,
-			"vosk_url": *voskURL,
-			"time":     time.Now().Unix(),
+			"status":          "UP",
+			"port":            *port,
+			"audiosocket_port": *audioSocketPort,
+			"active_slots":    len(sem),
+			"max_slots":       *maxSlots,
+			"vosk_url":        *voskURL,
+			"time":            time.Now().Unix(),
 		})
 	})
 
@@ -57,13 +82,13 @@ func main() {
 	}
 
 	log.Printf("==================================================================")
-	log.Printf(" [CLASSIFICATOR-ENGINE] Ativo na porta %s", addr)
-	log.Printf(" [VOSK UPSTREAM] %s | Janela Maxima: %.1fs", *voskURL, *maxDurSec)
+	log.Printf(" [CLASSIFICATOR-ENGINE] HTTP/WS: %s | AudioSocket: %s", addr, audioSocketAddr)
+	log.Printf(" [VOSK UPSTREAM] %s | Slots Maximos: %d | Janela: %.1fs", *voskURL, *maxSlots, *maxDurSec)
 	log.Printf("==================================================================")
 
 	var wg sync.WaitGroup // Rastreador de sessões ativas
 
-	// Tratamento direto de conexões TCP para garantir compatibilidade com o transparent proxy
+	// Tratamento de conexões TCP com Fast-Reject via semáforo
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -71,11 +96,19 @@ func main() {
 				return // Sai do loop quando listener.Close() for chamado
 			}
 
-			wg.Add(1) // Adiciona uma sessão ativa
-			go func(c net.Conn) {
-				defer wg.Done() // Libera ao terminar
-				handleRawConnection(c, *voskURL, classifier, *maxDurSec)
-			}(conn)
+			select {
+			case sem <- struct{}{}:
+				wg.Add(1)
+				go func(c net.Conn) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					handleRawConnection(c, *voskURL, classifier, *maxDurSec)
+				}(conn)
+			default:
+				log.Printf("[ENGINE-REJECT] Capacidade máxima (%d slots) atingida. Rejeitando conexão de %s",
+					*maxSlots, conn.RemoteAddr())
+				_ = conn.Close()
+			}
 		}
 	}()
 
@@ -84,12 +117,12 @@ func main() {
 	<-sigChan
 
 	log.Printf("[ENGINE-%d] Recebido sinal de parada. Recusando novas conexões...", *port)
-	_ = listener.Close() // Router instantaneamente fará o Hunting para outra porta
+	_ = listener.Close()
+	_ = audioSocketServer.Close()
 	_ = server.Shutdown(context.Background())
 
 	log.Printf("[ENGINE-%d] Aguardando chamadas em andamento finalizarem (Graceful Draining)...", *port)
 
-	// Espera as goroutines terminarem com um hard-timeout de 5 segundos
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()

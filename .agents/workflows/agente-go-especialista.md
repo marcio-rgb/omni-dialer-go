@@ -79,8 +79,8 @@ graph TD
 ### 3.1. Chamadas e Telefonia ([`call.go`](file:///home/marcio/ominichat/dialer-go/internal/domain/call.go))
 - `CDR`: Histórico de tarifação e gravação persistido em PostgreSQL (`dialer_db`).
   - Campos: `ID` (string), `TenantID` (string), `CampaignID` (*string), `Phone` (string), `AgentID` (*string), `CallType` (`CallType`), `Disposition` (`CallDisposition`), `SIPStatus` (*int), `HangupCause` (*int), `DurationSeconds` (int), `BillsecSeconds` (int), `RingSeconds` (int), `TrunkUsed` (string), `RecordingFile` (*string), `RecordingURL` (*string), `CreatedAt`, `InitiatedAt`, `AnsweredAt`, `EndedAt` (*time.Time).
-- `CDRFilter`: Parâmetros de busca paginada e filtros operacionais (`TenantID`, `CampaignID`, `Phone`, `Disposition`, `StartDate`, `EndDate`, `Page`, `Limit`).
-- `CDRListResponse`: DTO padronizado de resposta para listagem de chamadas (`Total`, `Page`, `Limit`, `TotalPages`, `CDRs`).
+- `CDRFilter`: Parâmetros de busca paginada e filtros operacionais de Contact Center (`TenantID`, `CampaignID`, `AgentID`, `CallType`, `TrunkUsed`, `LeadCPF`, `LeadID`, `Phone`, `Disposition`, `Dispositions`, `AMDStatus`, `HasRecording`, `MinBillsec`, `MaxBillsec`, `MinDuration`, `MaxDuration`, `Search`, `StartDate`, `EndDate`, `SortBy`, `SortOrder`, `Page`, `Limit`, `IncludeTotal`).
+- `CDRListResponse`: DTO padronizado de resposta para listagem de chamadas com suporte a paginação escalável (`Total *int64`, `Page int`, `Limit int`, `TotalPages *int`, `HasMore bool`, `CDRs []*CDR`).
 - `ActiveChannel`: Estado volátil de chamada em conversação ou discagem (`RecordingFile` preenchido via MixMonitor).
   - Campos: `ChannelID`, `TrunkID`, `TenantID`, `CampaignID`, `Phone`, `CallType`, `AgentID`, `SIPRoute`, `WebhookURL`, `StartedAt`, `AnsweredAt`, `IsAnswered`, `Disposition`, `RecordingFile`.
 - `PhoneTrunkMapping`: Vínculo O(1) de último tronco/projeto para roteamento receptivo.
@@ -156,6 +156,15 @@ graph TD
 | `PushAnsweredLead` | `PushAnsweredLead(ctx context.Context, event *domain.AnsweredLeadEvent) error` | Enfileira evento de chamada atendida com dados dinâmicos (`custom`) em `dialer:answered_leads`, na fila da campanha `dialer:answered_leads:<campaign_id>`, na fila segregada por tenant `dialer:answered_leads:tenant:<tenant_id>` e no canal Pub/Sub `dialer:events:answered:<tenant_id>`. |
 | `GetCallsSummaryBuffer` | `GetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string) (*domain.CallsSummaryResponse, time.Duration, error)` | Lê buffer determinístico de relatório de 15 minutos (900s). |
 | `SetCallsSummaryBuffer` | `SetCallsSummaryBuffer(ctx context.Context, tenantID, hashKey string, data *domain.CallsSummaryResponse, ttl time.Duration) error` | Grava buffer de relatório no Redis. |
+| `PublishCDREvent` | `PublishCDREvent(ctx context.Context, event *domain.CDREvent) error` | Publica evento de ciclo de vida de chamada no Redis Stream `dialer:stream:cdr_events` com retenção aproximada de 100k itens. |
+| `ReadCDREvents` | `ReadCDREvents(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.CDREventMessage, error)` | Consome lotes de eventos de CDR via Consumer Group com garantia At-Least-Once. |
+| `AckCDREvent` | `AckCDREvent(ctx context.Context, group string, id string) error` | Confirma o processamento de um evento de CDR (`XACK`). |
+| `SendCDRToDLQ` | `SendCDRToDLQ(ctx context.Context, event *domain.CDREvent, reason string) error` | Move eventos com falha irrecuperável para `dialer:stream:cdr_events:dlq`. |
+| `EnqueueTranscriptionJob` | `EnqueueTranscriptionJob(ctx context.Context, job *domain.TranscriptionJob) error` | Enfileira job assíncrono de transcrição no stream `dialer:stream:transcription_jobs`. |
+| `ReadTranscriptionJobs` | `ReadTranscriptionJobs(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.TranscriptionJobMessage, error)` | Consome jobs de transcrição pendentes via Consumer Group para processamento Faster-Whisper. |
+| `AckTranscriptionJob` | `AckTranscriptionJob(ctx context.Context, group string, id string) error` | Confirma o processamento e salvamento da transcrição no CDR. |
+| `SetCallMetadata` | `SetCallMetadata(ctx context.Context, callUUID string, meta domain.CallMetadata, ttl time.Duration) error` | Salva metadados da chamada no Redis sob `call:meta:<UUID>` para correlação com AudioSocket. |
+| `GetCallMetadata` | `GetCallMetadata(ctx context.Context, callUUID string) (*domain.CallMetadata, error)` | Recupera metadados da chamada (`LeadID`, `CampaignID`, `Phone`) via UUID para enriquecimento do veredito. |
 
 ### 4.3. `ports.LeadRepository`, `ports.CampaignRepository` & `ports.ReportRepository` ([`repository_port.go`](file:///home/marcio/ominichat/dialer-go/internal/ports/repository_port.go))
 | Interface | Método | Assinatura |
@@ -174,6 +183,7 @@ graph TD
 | `CampaignRepository` | `SetStatus` | `SetStatus(ctx context.Context, tenantID, campaignID string, status domain.CampaignStatus) (*domain.Campaign, error)` |
 | `CampaignRepository` | `IncrementCycle` | `IncrementCycle(ctx context.Context, campaignID string) error` |
 | `ReportRepository` | `SaveCDR` | `SaveCDR(ctx context.Context, cdr *domain.CDR) error` |
+| `ReportRepository` | `SaveCDREvent` | `SaveCDREvent(ctx context.Context, event *domain.CDREvent) error` |
 | `ReportRepository` | `UpdateCDRTranscription` | `UpdateCDRTranscription(ctx context.Context, cdrID string, transcription string) error` |
 | `ReportRepository` | `GetCallsSummary` | `GetCallsSummary(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string) (*domain.CallsSummaryResponse, error)` |
 | `ReportRepository` | `ListCDRs` | `ListCDRs(ctx context.Context, filter domain.CDRFilter) (*domain.CDRListResponse, error)` |
@@ -258,12 +268,24 @@ graph TD
   - Dispara encerramento imediato via `AMIPort.Hangup` com causa Q.850 (`cause = 16`).
 
 ### 5.3.1. `core.AgentQueueManager` ([`agent_queue_manager.go`](file:///home/marcio/ecosystem/dialer-go/internal/core/agent_queue_manager.go))
+- `SetAgentRepository(repo ports.AgentRepository)`: Injeta persistência forense de transições de presença em `tenant_agent_history`.
 - `SetPresence(ctx context.Context, event *domain.QueuePresenceEvent) error`: Ponto unificado de controle de presença.
 - `PauseMember(ctx context.Context, req *domain.QueueMemberPauseRequest) error`:
   - Dispara `QueuePause` no Asterisk via AMI para colocar ou tirar operador de pausa na fila.
   - Sincroniza atomicamente com o cache Redis (`RemoveAgentFromQueues` se pausado / `PushIdleAgent` se despausado).
-- `AddMember(ctx context.Context, req *domain.QueueMemberRequest) error`: Insere membro dinâmico na fila Asterisk e registra ocioso no Redis.
-- `RemoveMember(ctx context.Context, req *domain.QueueMemberRemoveRequest) error`: Remove membro dinâmico na fila Asterisk e purga do Redis.
+  - Registra histórico atômico com status `PAUSED` ou `AVAILABLE` em `tenant_agent_history`.
+- `AddMember(ctx context.Context, req *domain.QueueMemberRequest) error`: Insere membro dinâmico na fila Asterisk, registra ocioso no Redis e grava status `AVAILABLE` (ou `PAUSED`).
+- `RemoveMember(ctx context.Context, req *domain.QueueMemberRemoveRequest) error`: Remove membro dinâmico na fila Asterisk, purga do Redis e grava status `OFFLINE`.
+
+### 5.3.2. `ports.AgentRepository` & `postgres.AgentRepo` ([`agent_repo.go`](file:///home/marcio/ecosystem/dialer-go/internal/adapters/postgres/agent_repo.go))
+- `UpsertAgent(ctx, agent *domain.TenantAgent) error`: Cadastro/atualização soberana em `public.tenants_agents`.
+- `GetAgent(ctx, tenantID, agentID) (*domain.TenantAgent, error)`: Consulta dados cadastrais.
+- `ListAgents(ctx, tenantID, isActive, limit, offset) ([]*domain.TenantAgent, int64, error)`: Listagem paginada.
+- `DeleteAgent(ctx, tenantID, agentID) error`: Exclusão de operador.
+- `RecordHistory(ctx, history *domain.TenantAgentHistory) error`: Fecha atomicamente status pendente anterior calculando `duration_seconds` e abre nova tupla em `public.tenant_agent_history`.
+- `GetAgentHistory(ctx, tenantID, agentID, start, end, limit, offset) ([]*domain.TenantAgentHistory, error)`: Timeline de estados.
+- `GetAgentPerformance(ctx, tenantID, start, end, agentID) ([]*domain.AgentPerformanceItem, error)`: Relatório consolidado com `LEFT JOIN tenants_agents` aplicando fallback `COALESCE(agent_name, 'Não Informado')`.
+
 
 
 ### 5.4. `core.MailingProcessor` ([`mailing_processor.go`](file:///home/marcio/ominichat/dialer-go/internal/core/mailing_processor.go))

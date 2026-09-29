@@ -149,6 +149,33 @@ func (m *mockCacheForQueue) IncrementConsecutiveErrors(ctx context.Context, camp
 func (m *mockCacheForQueue) GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) {
 	return 0, nil
 }
+func (m *mockCacheForQueue) PublishCDREvent(ctx context.Context, event *domain.CDREvent) error {
+	return nil
+}
+func (m *mockCacheForQueue) ReadCDREvents(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.CDREventMessage, error) {
+	return nil, nil
+}
+func (m *mockCacheForQueue) AckCDREvent(ctx context.Context, group string, id string) error {
+	return nil
+}
+func (m *mockCacheForQueue) SendCDRToDLQ(ctx context.Context, event *domain.CDREvent, reason string) error {
+	return nil
+}
+func (m *mockCacheForQueue) EnqueueTranscriptionJob(ctx context.Context, job *domain.TranscriptionJob) error {
+	return nil
+}
+func (m *mockCacheForQueue) ReadTranscriptionJobs(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.TranscriptionJobMessage, error) {
+	return nil, nil
+}
+func (m *mockCacheForQueue) AckTranscriptionJob(ctx context.Context, group string, id string) error {
+	return nil
+}
+func (m *mockCacheForQueue) SetCallMetadata(ctx context.Context, callUUID string, meta domain.CallMetadata, ttl time.Duration) error {
+	return nil
+}
+func (m *mockCacheForQueue) GetCallMetadata(ctx context.Context, callUUID string) (*domain.CallMetadata, error) {
+	return nil, nil
+}
 
 func TestQueueHandler_SetPresence(t *testing.T) {
 	ami := &mockAMIForQueue{}

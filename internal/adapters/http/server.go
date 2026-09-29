@@ -33,6 +33,7 @@ type HandlersConfig struct {
 	SIPConfig           *SIPConfigHandler
 	Instance            *InstanceHandler
 	Queue               *QueueHandler
+	Agent               *AgentHandler
 }
 
 func NewServer(port int, handlers HandlersConfig) *Server {
@@ -170,14 +171,30 @@ func NewServer(port int, handlers HandlersConfig) *Server {
 
 			// 10. Gestão Dinâmica de Membros de Filas Asterisk (app_queue)
 			if handlers.Queue != nil {
-				api.Route("/queues", func(q chi.Router) {
+				registerQueueRoutes := func(q chi.Router) {
 					q.Post("/presence", handlers.Queue.SetPresence)
 					q.Post("/members", handlers.Queue.AddMember)
 					q.Delete("/members", handlers.Queue.RemoveMember)
 					q.Post("/members/pause", handlers.Queue.PauseMember)
+					q.Post("/pause", handlers.Queue.PauseMember)
 					q.Get("/{queue_id}/members", handlers.Queue.GetQueueMembers)
+				}
+				api.Route("/queues", registerQueueRoutes)
+				api.Route("/queue", registerQueueRoutes)
+			}
+
+			// 11. Gestão Soberana de Agentes & Performance
+			if handlers.Agent != nil {
+				api.Route("/agents", func(ag chi.Router) {
+					ag.Get("/", handlers.Agent.ListAgents)
+					ag.Post("/", handlers.Agent.UpsertAgent)
+					ag.Post("/batch", handlers.Agent.BatchUpsert)
+					ag.Get("/{id}", handlers.Agent.GetAgent)
+					ag.Put("/{id}", handlers.Agent.UpsertAgent)
+					ag.Delete("/{id}", handlers.Agent.DeleteAgent)
+					ag.Get("/{id}/history", handlers.Agent.GetAgentHistory)
 				})
-				api.Post("/queue/presence", handlers.Queue.SetPresence)
+				api.Get("/reports/agent-performance", handlers.Agent.GetAgentPerformance)
 			}
 		})
 	})

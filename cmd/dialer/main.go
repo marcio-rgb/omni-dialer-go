@@ -111,6 +111,7 @@ func main() {
 		campaignRepo := postgres.NewCampaignRepo(pgPool)
 		reportRepo := postgres.NewReportRepo(pgPool)
 		tenantRepo := postgres.NewTenantRepo(pgPool)
+		agentRepo := postgres.NewAgentRepo(pgPool)
 		storageAdapter := storage.NewStorageAdapter(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
 
 		webhookAdapter := webhook.NewWebhookClient(cfg.WebhookURL)
@@ -131,6 +132,16 @@ func main() {
 		manualEngine := core.NewManualEngine(amiClient, channelMgr, trunkRepo, cache)
 		manualEngine.SetTenantRepository(tenantRepo)
 		manualEngine.SetWebhookClient(webhookAdapter)
+
+		// 7.1. Inicializa Workers em Background para Redis Streams (CDR Persister e Faster-Whisper)
+		cdrPersister := core.NewCDRPersisterWorker(cache, reportRepo)
+		cdrPersister.StartDaemon(ctx)
+		defer cdrPersister.Stop()
+
+		whisperWorker := core.NewWhisperTranscriptionWorker(cache, reportRepo, "")
+		whisperWorker.StartDaemon(ctx)
+		defer whisperWorker.Stop()
+
 		mailingProcessor := core.NewMailingProcessor(storageAdapter, leadRepo, cache)
 		saturationService := core.NewSaturationService(leadRepo, campaignRepo)
 
@@ -156,8 +167,10 @@ func main() {
 
 		// 8. Gestão Dinâmica de Filas e Presença de Operadores (Asterisk app_queue + Redis PubSub)
 		agentQueueMgr := core.NewAgentQueueManager(amiClient, cache)
+		agentQueueMgr.SetAgentRepository(agentRepo)
 		cache.StartPresenceListener(ctx, agentQueueMgr)
 		queueHandler := httpAdapter.NewQueueHandler(agentQueueMgr)
+		agentHandler := httpAdapter.NewAgentHandler(agentRepo)
 
 		healthHandler := httpAdapter.NewHealthHandler(pgPool, cache, amiClient, channelMgr)
 		healthHandler.SetLiveKitPort(livekitClient)
@@ -179,6 +192,7 @@ func main() {
 			SIPConfig:           sipConfigHandler,
 			Instance:            instanceHandler,
 			Queue:               queueHandler,
+			Agent:               agentHandler,
 		}
 	}
 

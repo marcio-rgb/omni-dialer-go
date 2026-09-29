@@ -61,18 +61,19 @@ type HangupCallResponse struct {
 	Channel string `json:"channel,omitempty"`
 }
 
-// FormatQueueName padroniza o nome da fila Asterisk como trim(tenant_id)-trim(campaign_id)
+// FormatQueueName padroniza o nome da fila Asterisk como trim(tenant_id)-trim(campaign_id).
+// Se tenant_id for omitido, assume "default" para manter paridade absoluta entre engine e controllers.
 func FormatQueueName(tenantID, campaignID string) string {
 	t := strings.TrimSpace(tenantID)
+	if t == "" {
+		t = "default"
+	}
 	c := strings.TrimSpace(campaignID)
-	if t != "" && c != "" {
-		return t + "-" + c
+	if c == "" {
+		return "dialer-default-queue"
 	}
-	if c != "" {
-		if strings.HasPrefix(c, "q_") {
-			return c
-		}
-		return "q_" + c
+	if strings.HasPrefix(c, "q_") {
+		c = strings.TrimPrefix(c, "q_")
 	}
-	return "dialer-default-queue"
+	return t + "-" + c
 }

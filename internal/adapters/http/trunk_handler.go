@@ -186,6 +186,7 @@ func (h *TrunkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		QualifyTimeout:   dto.QualifyTimeout,
 		MaxChannels:      dto.MaxChannels,
 		IsEnabled:        dto.IsEnabled,
+		AMDEnabled:       dto.AMDEnabled,
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
@@ -302,6 +303,9 @@ func (h *TrunkHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if dto.IsEnabled != nil {
 		existing.IsEnabled = *dto.IsEnabled
+	}
+	if dto.AMDEnabled != nil {
+		existing.AMDEnabled = *dto.AMDEnabled
 	}
 	existing.UpdatedAt = time.Now()
 

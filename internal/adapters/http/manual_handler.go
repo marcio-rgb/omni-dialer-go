@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"dialer-go/internal/core"
@@ -33,11 +34,16 @@ func NewManualHandler(engine *core.ManualEngine) *ManualHandler {
 func (h *ManualHandler) DialManual(w http.ResponseWriter, r *http.Request) {
 	var req domain.ManualCallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [MANUAL-DIAL] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Payload JSON inválido").WriteJSON(w)
 		return
 	}
 
+	log.Printf("[PARTNER-IN] [MANUAL-DIAL] Tenant: %q, Agent: %q, Phone: %q, Route: %q, Trunk: %q, LeadName: %q (From: %s)",
+		req.TenantID, req.AgentID, req.Phone, req.SIPRoute, req.TrunkID, req.LeadName, r.RemoteAddr)
+
 	if req.TenantID == "" || req.AgentID == "" || req.Phone == "" || req.SIPRoute == "" {
+		log.Printf("[PARTNER-IN] [MANUAL-DIAL] [MISSING_FIELDS] Campos obrigatórios ausentes de %s", r.RemoteAddr)
 		domain.NewErrBadRequest("MISSING_FIELDS", "Os campos tenant_id, agent_id, phone e sip_route são obrigatórios.").WriteJSON(w)
 		return
 	}
@@ -69,9 +75,13 @@ func (h *ManualHandler) DialManual(w http.ResponseWriter, r *http.Request) {
 func (h *ManualHandler) Hangup(w http.ResponseWriter, r *http.Request) {
 	var req domain.HangupCallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[PARTNER-IN] [HANGUP] [INVALID_JSON] Falha ao decodificar JSON de %s: %v", r.RemoteAddr, err)
 		domain.NewErrBadRequest("INVALID_JSON", "Payload JSON inválido").WriteJSON(w)
 		return
 	}
+
+	log.Printf("[PARTNER-IN] [HANGUP] CallID: %q, Channel: %q, Agent: %q, Phone: %q, Cause: %d (From: %s)",
+		req.CallID, req.Channel, req.AgentID, req.Phone, req.Cause, r.RemoteAddr)
 
 	resp, err := h.engine.HangupCall(r.Context(), &req)
 	if err != nil {

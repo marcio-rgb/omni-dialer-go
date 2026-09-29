@@ -28,11 +28,14 @@ func (m *mockReportRepoForTest) ListCDRs(ctx context.Context, filter domain.CDRF
 			filtered = append(filtered, c)
 		}
 	}
+	total := int64(len(filtered))
+	tp := 1
 	return &domain.CDRListResponse{
-		Total:      int64(len(filtered)),
+		Total:      &total,
 		Page:       filter.Page,
 		Limit:      filter.Limit,
-		TotalPages: 1,
+		TotalPages: &tp,
+		HasMore:    false,
 		CDRs:       filtered,
 	}, nil
 }
@@ -112,7 +115,7 @@ func TestReportHandler_ListCDRs(t *testing.T) {
 			t.Fatalf("falha ao deserializar resposta: %v", err)
 		}
 
-		if resp.Data == nil || resp.Data.Total != 1 {
+		if resp.Data == nil || resp.Data.Total == nil || *resp.Data.Total != 1 {
 			t.Fatalf("esperado 1 CDR, obteve %v", resp.Data)
 		}
 

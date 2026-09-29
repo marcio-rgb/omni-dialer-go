@@ -19,6 +19,10 @@ func (m *mockReportRepoForTM) SaveCDR(ctx context.Context, cdr *domain.CDR) erro
 	return nil
 }
 
+func (m *mockReportRepoForTM) SaveCDREvent(ctx context.Context, event *domain.CDREvent) error {
+	return nil
+}
+
 func (m *mockReportRepoForTM) UpdateCDRTranscription(ctx context.Context, cdrID string, transcription string) error {
 	m.lastTranscriptID = cdrID
 	m.lastTranscription = transcription

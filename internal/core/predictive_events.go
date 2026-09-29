@@ -63,10 +63,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 	for attempt := 0; attempt < 3; attempt++ {
 		agentRedis, err := pe.cache.PopIdleAgent(ctx, 50*time.Millisecond)
 		if err == nil && agentRedis != nil && agentRedis.AgentID != "" {
-			targetRoom := agentRedis.LiveKitRoom
-			if targetRoom == "" {
-				targetRoom = fmt.Sprintf("sala_agente_%s", agentRedis.AgentID)
-			}
+			targetRoom := formatAgentRoom(agentRedis.AgentID, agentRedis.LiveKitRoom, "")
 			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				agentData = agentRedis
@@ -83,7 +80,7 @@ func (pe *PredictiveEngine) HandlePredictiveHuman(ctx context.Context, channel, 
 
 		agent, err := pe.cache.GetNextAvailableAgent(ctx, campaignID)
 		if err == nil && agent != nil && agent.AgentID != "" {
-			targetRoom := fmt.Sprintf("sala_agente_%s", agent.AgentID)
+			targetRoom := formatAgentRoom(agent.AgentID, "", agent.SIPRoute)
 			acquired, lockErr := pe.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				userID = agent.AgentID

@@ -156,6 +156,33 @@ func (m *mockCache) IncrementConsecutiveErrors(ctx context.Context, campaignID s
 func (m *mockCache) GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error) {
 	return 0, nil
 }
+func (m *mockCache) PublishCDREvent(ctx context.Context, event *domain.CDREvent) error {
+	return nil
+}
+func (m *mockCache) ReadCDREvents(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.CDREventMessage, error) {
+	return nil, nil
+}
+func (m *mockCache) AckCDREvent(ctx context.Context, group string, id string) error {
+	return nil
+}
+func (m *mockCache) SendCDRToDLQ(ctx context.Context, event *domain.CDREvent, reason string) error {
+	return nil
+}
+func (m *mockCache) EnqueueTranscriptionJob(ctx context.Context, job *domain.TranscriptionJob) error {
+	return nil
+}
+func (m *mockCache) ReadTranscriptionJobs(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.TranscriptionJobMessage, error) {
+	return nil, nil
+}
+func (m *mockCache) AckTranscriptionJob(ctx context.Context, group string, id string) error {
+	return nil
+}
+func (m *mockCache) SetCallMetadata(ctx context.Context, callUUID string, meta domain.CallMetadata, ttl time.Duration) error {
+	return nil
+}
+func (m *mockCache) GetCallMetadata(ctx context.Context, callUUID string) (*domain.CallMetadata, error) {
+	return nil, nil
+}
 
 
 

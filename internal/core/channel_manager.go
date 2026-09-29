@@ -231,6 +231,19 @@ func (cm *ChannelManager) SetCallDisposition(callID string, disp domain.CallDisp
 	cm.chanMu.Unlock()
 }
 
+// SetAMDStatus armazena o status e a causa de AMD na chamada ativa.
+func (cm *ChannelManager) SetAMDStatus(callID, status, cause string) {
+	if callID == "" {
+		return
+	}
+	cm.chanMu.Lock()
+	if ch, exists := cm.activeChannels[callID]; exists {
+		ch.AMDStatus = &status
+		ch.AMDCause = &cause
+	}
+	cm.chanMu.Unlock()
+}
+
 // ReleaseByAsterisk desaloca o slot associado a um canal Asterisk ou UniqueID e retorna o canal encerrado.
 func (cm *ChannelManager) ReleaseByAsterisk(ctx context.Context, astChannel, uniqueID string) *domain.ActiveChannel {
 	callID := cm.GetCallIDByAsterisk(astChannel, uniqueID)

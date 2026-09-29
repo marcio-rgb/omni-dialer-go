@@ -408,6 +408,42 @@ func (r *RedisAdapter) ReleaseRoomLock(ctx context.Context, roomName string) err
 	return r.client.Del(ctx, key).Err()
 }
 
+// SetCallMetadata persiste os metadados da chamada no Redis sob a chave call:meta:<UUID>
+func (r *RedisAdapter) SetCallMetadata(ctx context.Context, callUUID string, meta domain.CallMetadata, ttl time.Duration) error {
+	if callUUID == "" {
+		return fmt.Errorf("callUUID obrigatorio")
+	}
+	if ttl <= 0 {
+		ttl = 15 * time.Minute
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("falha ao serializar call metadata: %w", err)
+	}
+	key := fmt.Sprintf("call:meta:%s", callUUID)
+	return r.client.Set(ctx, key, data, ttl).Err()
+}
+
+// GetCallMetadata recupera os metadados da chamada do Redis (call:meta:<UUID>)
+func (r *RedisAdapter) GetCallMetadata(ctx context.Context, callUUID string) (*domain.CallMetadata, error) {
+	if callUUID == "" {
+		return nil, nil
+	}
+	key := fmt.Sprintf("call:meta:%s", callUUID)
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var meta domain.CallMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("falha ao desserializar call metadata: %w", err)
+	}
+	return &meta, nil
+}
+
 
 
 

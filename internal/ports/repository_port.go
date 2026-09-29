@@ -43,6 +43,7 @@ type CampaignRepository interface {
 
 type ReportRepository interface {
 	SaveCDR(ctx context.Context, cdr *domain.CDR) error
+	SaveCDREvent(ctx context.Context, event *domain.CDREvent) error
 	UpdateCDRTranscription(ctx context.Context, cdrID string, transcription string) error
 	GetCallsSummary(ctx context.Context, tenantID string, startDate, endDate time.Time, campaignID *string) (*domain.CallsSummaryResponse, error)
 	Get10MinAbandonStats(ctx context.Context, tenantID, campaignID string) (abandoned, answered int64, err error)

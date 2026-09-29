@@ -30,6 +30,12 @@ rtp_port:
 # Permite chamadas sem autenticação SIP digest prévia (o Asterisk entrega via loopback 127.0.0.1)
 insecure: true
 
+# Codecs suportados no gateway (priorizando áudio telefônico alaw/pcma para passthrough direto)
+codecs:
+  - opus
+  - pcma
+  - pcmu
+
 # Regras de Despacho Automático para Salas LiveKit:
 # - room_prefix: "call_" -> Campanhas de IA / Agentes Virtuais (call_campanha_lead)
 # - room_prefix: "sala_" -> Operadores Humanos OmniChat (sala_agente_id)

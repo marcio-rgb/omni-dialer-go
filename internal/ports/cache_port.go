@@ -55,6 +55,21 @@ type CachePort interface {
 	ResetConsecutiveErrors(ctx context.Context, campaignID string) error
 	IncrementConsecutiveErrors(ctx context.Context, campaignID string) (int64, error)
 	GetConsecutiveErrors(ctx context.Context, campaignID string) (int64, error)
+
+	// Redis Streams para CDRs (Ciclo de Vida 100% Coberto)
+	PublishCDREvent(ctx context.Context, event *domain.CDREvent) error
+	ReadCDREvents(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.CDREventMessage, error)
+	AckCDREvent(ctx context.Context, group, id string) error
+	SendCDRToDLQ(ctx context.Context, event *domain.CDREvent, reason string) error
+
+	// Jobs de Transcrição Assíncrona Faster-Whisper
+	EnqueueTranscriptionJob(ctx context.Context, job *domain.TranscriptionJob) error
+	ReadTranscriptionJobs(ctx context.Context, group, consumer string, count int64, block time.Duration) ([]*domain.TranscriptionJobMessage, error)
+	AckTranscriptionJob(ctx context.Context, group, id string) error
+
+	// Metadados de Chamadas para Correlação AudioSocket (call:meta:<UUID>)
+	SetCallMetadata(ctx context.Context, callUUID string, meta domain.CallMetadata, ttl time.Duration) error
+	GetCallMetadata(ctx context.Context, callUUID string) (*domain.CallMetadata, error)
 }
 
 

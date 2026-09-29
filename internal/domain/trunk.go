@@ -70,6 +70,7 @@ type Trunk struct {
 	QualifyTimeout   float64          `json:"qualify_timeout"`
 	MaxChannels      int              `json:"max_channels"`
 	IsEnabled        bool             `json:"is_enabled"`
+	AMDEnabled       bool             `json:"amd_enabled"`
 	CreatedAt        time.Time        `json:"created_at"`
 	UpdatedAt        time.Time        `json:"updated_at"`
 }
@@ -134,6 +135,7 @@ type CreateTrunkDTO struct {
 	QualifyTimeout   float64          `json:"qualify_timeout"`
 	MaxChannels      int              `json:"max_channels"`
 	IsEnabled        bool             `json:"is_enabled"`
+	AMDEnabled       bool             `json:"amd_enabled"`
 }
 
 type UpdateTrunkDTO struct {
@@ -158,6 +160,7 @@ type UpdateTrunkDTO struct {
 	QualifyTimeout   *float64          `json:"qualify_timeout,omitempty"`
 	MaxChannels      *int              `json:"max_channels,omitempty"`
 	IsEnabled        *bool             `json:"is_enabled,omitempty"`
+	AMDEnabled       *bool             `json:"amd_enabled,omitempty"`
 }
 
 type EnumOption struct {

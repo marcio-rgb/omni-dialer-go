@@ -141,20 +141,15 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 	// 4. Sincroniza operadores na fila Asterisk (app_queue) e armazena em cache
 	queueName := domain.FormatQueueName(req.TenantID, req.CampaignID)
 	for _, agent := range req.AvailableAgents {
-		roomName := agent.AgentID
-		if strings.Contains(agent.SIPRoute, "sip:") {
-			parts := strings.Split(agent.SIPRoute, "sip:")
-			if len(parts) > 1 {
-				sub := strings.Split(parts[1], "@")[0]
-				if sub != "" {
-					roomName = sub
-				}
-			}
-		} else if agent.SIPRoute != "" && !strings.HasPrefix(agent.SIPRoute, "PJSIP/") {
-			roomName = agent.SIPRoute
-		}
-		iface := fmt.Sprintf("Local/%s@livekit-agent-queue/n", roomName)
+		roomName := formatAgentRoom(agent.AgentID, "", agent.SIPRoute)
+		iface := formatAgentQueueInterface(agent.AgentID, "", agent.SIPRoute)
 		_ = pe.ami.QueueAdd(ctx, fmt.Sprintf("qadd-%s-%s", req.CampaignID, agent.AgentID), queueName, iface, agent.AgentID, 0, false)
+		if pe.cache != nil {
+			_ = pe.cache.PushIdleAgent(ctx, &domain.AgentRedisData{
+				AgentID:     agent.AgentID,
+				LiveKitRoom: roomName,
+			})
+		}
 	}
 	_ = pe.cache.StoreAvailableAgents(ctx, req.CampaignID, req.AvailableAgents, 30*time.Second)
 
@@ -329,6 +324,17 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			break
 		}
 
+		var leadIDPtr *int64
+		if leadItem.LeadID > 0 {
+			lid := leadItem.LeadID
+			leadIDPtr = &lid
+		}
+
+		leadIDStr := fmt.Sprintf("%d", leadItem.LeadID)
+		if leadIDStr == "0" || leadIDStr == "" {
+			leadIDStr = phone
+		}
+
 		callID := fmt.Sprintf("pred-%s", uuid.New().String())
 		activeChan := &domain.ActiveChannel{
 			ChannelID:  callID,
@@ -336,6 +342,7 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 			TenantID:   req.TenantID,
 			CampaignID: &req.CampaignID,
 			Phone:      phone,
+			LeadID:     leadIDPtr,
 			CPF:        leadItem.CPF,
 			Name:       leadItem.Name,
 			Att1:       leadItem.Att1,
@@ -368,49 +375,94 @@ func (pe *PredictiveEngine) ProcessDemand(ctx context.Context, req *domain.Predi
 		dialChannel := selectedTrunk.DialString(destPhone)
 		actionID := fmt.Sprintf("orig-%s", callID)
 
-		leadIDStr := fmt.Sprintf("%d", leadItem.LeadID)
-		if leadIDStr == "0" || leadIDStr == "" {
-			leadIDStr = phone
-		}
-
 		audioName := domain.Slugify(leadItem.FirstName)
 		if audioName == "" {
 			audioName = domain.Slugify(leadItem.Name)
 		}
 		workWord := domain.Slugify(leadItem.WorkWord)
 
+		trunkAMD := "0"
+		if selectedTrunk.AMDEnabled {
+			trunkAMD = "1"
+		}
+
 		vars := map[string]string{
-			"CALL_ID":       callID,
-			"__CALL_ID":     callID,
-			"TENANT_ID":     req.TenantID,
-			"__TENANT_ID":   req.TenantID,
-			"CAMPAIGN_ID":   req.CampaignID,
-			"__CAMPAIGN_ID": req.CampaignID,
-			"CALL_TYPE":     "PREDICTIVE",
-			"__CALL_TYPE":   "PREDICTIVE",
-			"TRUNK_ID":      selectedTrunk.ID,
-			"__TRUNK_ID":    selectedTrunk.ID,
-			"PHONE":         destPhone,
-			"__PHONE":       destPhone,
-			"LEAD_ID":       leadIDStr,
-			"__LEAD_ID":     leadIDStr,
-			"LEAD_CPF":      leadItem.CPF,
-			"__LEAD_CPF":    leadItem.CPF,
-			"LEAD_NAME":     leadItem.Name,
-			"__LEAD_NAME":   leadItem.Name,
-			"AUDIO_NAME":    audioName,
-			"__AUDIO_NAME":  audioName,
-			"WORK_WORD":     workWord,
-			"__WORK_WORD":   workWord,
-			"QUEUE_NAME":    queueName,
-			"__QUEUE_NAME":  queueName,
+			"CALL_ID":           callID,
+			"__CALL_ID":         callID,
+			"TENANT_ID":         req.TenantID,
+			"__TENANT_ID":       req.TenantID,
+			"CAMPAIGN_ID":       req.CampaignID,
+			"__CAMPAIGN_ID":     req.CampaignID,
+			"CALL_TYPE":         "PREDICTIVE",
+			"__CALL_TYPE":       "PREDICTIVE",
+			"TRUNK_ID":          selectedTrunk.ID,
+			"__TRUNK_ID":        selectedTrunk.ID,
+			"PHONE":             destPhone,
+			"__PHONE":           destPhone,
+			"LEAD_ID":           leadIDStr,
+			"__LEAD_ID":         leadIDStr,
+			"LEAD_CPF":          leadItem.CPF,
+			"__LEAD_CPF":        leadItem.CPF,
+			"LEAD_NAME":         leadItem.Name,
+			"__LEAD_NAME":       leadItem.Name,
+			"AUDIO_NAME":        audioName,
+			"__AUDIO_NAME":      audioName,
+			"WORK_WORD":         workWord,
+			"__WORK_WORD":       workWord,
+			"QUEUE_NAME":        queueName,
+			"__QUEUE_NAME":      queueName,
+			"TRUNK_AMD_ENABLED":   trunkAMD,
+			"__TRUNK_AMD_ENABLED": trunkAMD,
 		}
 		if selectedTrunk.UserAgent != nil && *selectedTrunk.UserAgent != "" {
 			vars["TRUNK_USER_AGENT"] = *selectedTrunk.UserAgent
 		}
 
-		err = pe.ami.Originate(ctx, actionID, dialChannel, "from-dialer-queue", "s", 1, 25, callerID, req.TenantID, vars)
+		now := time.Now()
+		if pe.cache != nil {
+			initEvt := &domain.CDREvent{
+				CallID:      callID,
+				TenantID:    req.TenantID,
+				CampaignID:  &req.CampaignID,
+				TrunkUsed:   selectedTrunk.ID,
+				Phone:       destPhone,
+				LeadID:      leadIDPtr,
+				LeadName:    &leadItem.Name,
+				LeadCPF:     &leadItem.CPF,
+				CallType:    domain.CallTypePredictive,
+				Type:        domain.CDREventInitiated,
+				StartedAt:   now,
+				InitiatedAt: &now,
+				Timestamp:   now.Unix(),
+			}
+			_ = pe.cache.PublishCDREvent(ctx, initEvt)
+		}
+
+		err = pe.ami.Originate(ctx, actionID, dialChannel, "from-dialer-amd", "s", 1, 25, callerID, req.TenantID, vars)
 		if err != nil {
+			if pe.cache != nil {
+				failEvt := &domain.CDREvent{
+					CallID:          callID,
+					TenantID:        req.TenantID,
+					CampaignID:      &req.CampaignID,
+					TrunkUsed:       selectedTrunk.ID,
+					Phone:           destPhone,
+					LeadID:          leadIDPtr,
+					LeadName:        &leadItem.Name,
+					LeadCPF:         &leadItem.CPF,
+					CallType:        domain.CallTypePredictive,
+					Disposition:     domain.DispositionFailed,
+					Type:            domain.CDREventOriginateFailed,
+					StartedAt:       now,
+					InitiatedAt:     &now,
+					EndedAt:         &now,
+					Timestamp:       now.Unix(),
+					DurationSeconds: 0,
+					BillsecSeconds:  0,
+					RingSeconds:     0,
+				}
+				_ = pe.cache.PublishCDREvent(ctx, failEvt)
+			}
 			_, _ = pe.cache.IncrementConsecutiveErrors(ctx, req.CampaignID)
 			pe.channels.ReleaseSlot(ctx, callID)
 			continue

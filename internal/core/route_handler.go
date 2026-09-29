@@ -87,10 +87,7 @@ func (rh *RouteHandler) HandleHumanDetected(ctx context.Context, channel, unique
 	for attempt := 0; attempt < 3; attempt++ {
 		agent, err := rh.cache.PopIdleAgent(ctx, 50*time.Millisecond)
 		if err == nil && agent != nil && agent.AgentID != "" {
-			targetRoom := agent.LiveKitRoom
-			if targetRoom == "" {
-				targetRoom = fmt.Sprintf("sala_agente_%s", agent.AgentID)
-			}
+			targetRoom := formatAgentRoom(agent.AgentID, agent.LiveKitRoom, "")
 
 			// Tenta adquirir a trava distribuída SETNX lock:room:<room_name> 1 EX 10
 			acquired, lockErr := rh.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
@@ -111,7 +108,7 @@ func (rh *RouteHandler) HandleHumanDetected(ctx context.Context, channel, unique
 		// Fallback: tenta recuperar operador da fila volátil por campanha
 		nextAgent, err := rh.cache.GetNextAvailableAgent(ctx, campaignID)
 		if err == nil && nextAgent != nil && nextAgent.AgentID != "" {
-			targetRoom := fmt.Sprintf("sala_agente_%s", nextAgent.AgentID)
+			targetRoom := formatAgentRoom(nextAgent.AgentID, "", nextAgent.SIPRoute)
 			acquired, lockErr := rh.cache.AcquireRoomLock(ctx, targetRoom, 10*time.Second)
 			if lockErr == nil && acquired {
 				userID = nextAgent.AgentID

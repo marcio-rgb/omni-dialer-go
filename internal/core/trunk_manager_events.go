@@ -29,6 +29,15 @@ func (tm *TrunkManager) handleOriginateResponse(ctx context.Context, attrs map[s
 	if response != "Success" {
 		if callID != "" {
 			tm.channels.ReleaseSlot(ctx, callID)
+			if tm.cache != nil {
+				evt := &domain.CDREvent{
+					CallID:      callID,
+					Disposition: domain.DispositionFailed,
+					Type:        domain.CDREventOriginateFailed,
+					Timestamp:   time.Now().Unix(),
+				}
+				_ = tm.cache.PublishCDREvent(ctx, evt)
+			}
 		}
 	} else {
 		if callID != "" {
@@ -178,6 +187,9 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 			TenantID:        activeChan.TenantID,
 			CampaignID:      activeChan.CampaignID,
 			Phone:           activeChan.Phone,
+			LeadID:          activeChan.LeadID,
+			LeadName:        &activeChan.Name,
+			LeadCPF:         &activeChan.CPF,
 			AgentID:         activeChan.AgentID,
 			CallType:        activeChan.CallType,
 			Disposition:     disposition,
@@ -190,12 +202,58 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 			RecordingFile:   recFilePtr,
 			RecordingURL:    recURLPtr,
 			Transcription:   transPtr,
+			AMDStatus:       activeChan.AMDStatus,
+			AMDCause:        activeChan.AMDCause,
 			CreatedAt:       activeChan.StartedAt,
 			InitiatedAt:     &activeChan.StartedAt,
 			AnsweredAt:      answeredAt,
 			EndedAt:         &now,
 		}
 		_ = repRepo.SaveCDR(ctx, cdr)
+	}
+
+	if tm.cache != nil {
+		hangupEvt := &domain.CDREvent{
+			CallID:          cdrID,
+			TenantID:        activeChan.TenantID,
+			CampaignID:      activeChan.CampaignID,
+			TrunkUsed:       activeChan.TrunkID,
+			Phone:           activeChan.Phone,
+			LeadID:          activeChan.LeadID,
+			LeadName:        &activeChan.Name,
+			LeadCPF:         &activeChan.CPF,
+			AgentID:         activeChan.AgentID,
+			CallType:        activeChan.CallType,
+			Disposition:     disposition,
+			Type:            domain.CDREventHangup,
+			Timestamp:       now.Unix(),
+			DurationSeconds: duration,
+			BillsecSeconds:  billsec,
+			RingSeconds:     ringSeconds,
+			HangupCause:     &causeInt,
+			RecordingFile:   recFilePtr,
+			RecordingURL:    recURLPtr,
+			Transcription:   transPtr,
+			AMDStatus:       activeChan.AMDStatus,
+			AMDCause:        activeChan.AMDCause,
+			StartedAt:       activeChan.StartedAt,
+			InitiatedAt:     &activeChan.StartedAt,
+			AnsweredAt:      answeredAt,
+			EndedAt:         &now,
+		}
+		_ = tm.cache.PublishCDREvent(ctx, hangupEvt)
+
+		// Se a chamada teve áudio gravado e duração relevante (>= 5s), enfileira transcrição assíncrona
+		if recFilePtr != nil && *recFilePtr != "" && billsec >= 5 {
+			job := &domain.TranscriptionJob{
+				CallID:        cdrID,
+				TenantID:      activeChan.TenantID,
+				RecordingFile: *recFilePtr,
+				Duration:      billsec,
+				Language:      "pt",
+			}
+			_ = tm.cache.EnqueueTranscriptionJob(ctx, job)
+		}
 	}
 
 	if routRepo != nil && (activeChan.CallType == domain.CallTypePredictive || activeChan.CallType == domain.CallTypeManual) {
@@ -224,6 +282,16 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 func (tm *TrunkManager) handleNewstate(ctx context.Context, attrs map[string]string) {
 	if attrs["ChannelState"] == "6" || attrs["ChannelStateDesc"] == "Up" {
 		tm.channels.MarkAnswered(attrs["Channel"], attrs["Uniqueid"], time.Now())
+		callID := tm.channels.GetCallIDByAsterisk(attrs["Channel"], attrs["Uniqueid"])
+		if tm.cache != nil && callID != "" {
+			evt := &domain.CDREvent{
+				CallID:      callID,
+				Disposition: domain.DispositionAnswered,
+				Type:        domain.CDREventAnswered,
+				Timestamp:   time.Now().Unix(),
+			}
+			_ = tm.cache.PublishCDREvent(ctx, evt)
+		}
 	}
 }
 
@@ -255,6 +323,23 @@ func (tm *TrunkManager) handleUserEvent(ctx context.Context, attrs map[string]st
 		tm.channels.MarkAnswered(channel, uniqueID, time.Now())
 	case "PredictiveHuman":
 		tm.channels.MarkAnswered(channel, uniqueID, time.Now())
+		callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
+		if callID != "" {
+			tm.channels.SetAMDStatus(callID, "HUMAN", "HUMAN_GREETING")
+			if tm.cache != nil {
+				amdStatus := "HUMAN"
+				amdCause := "HUMAN_GREETING"
+				evt := &domain.CDREvent{
+					CallID:      callID,
+					AMDStatus:   &amdStatus,
+					AMDCause:    &amdCause,
+					Disposition: domain.DispositionAnswered,
+					Type:        domain.CDREventAMDClassified,
+					Timestamp:   time.Now().Unix(),
+				}
+				_ = tm.cache.PublishCDREvent(ctx, evt)
+			}
+		}
 		if pred != nil {
 			_ = pred.HandlePredictiveHuman(ctx, channel, uniqueID, phone, campaignID, leadID)
 		}
@@ -265,8 +350,25 @@ func (tm *TrunkManager) handleUserEvent(ctx context.Context, attrs map[string]st
 		}
 	case "PredictiveMachine":
 		callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
+		cause := attrs["Cause"]
+		if cause == "" {
+			cause = "VOICEMAIL"
+		}
 		if callID != "" {
 			tm.channels.SetCallDisposition(callID, domain.DispositionVoicemail)
+			tm.channels.SetAMDStatus(callID, "MACHINE", cause)
+			if tm.cache != nil {
+				amdStatus := "MACHINE"
+				evt := &domain.CDREvent{
+					CallID:      callID,
+					AMDStatus:   &amdStatus,
+					AMDCause:    &cause,
+					Disposition: domain.DispositionVoicemail,
+					Type:        domain.CDREventAMDClassified,
+					Timestamp:   time.Now().Unix(),
+				}
+				_ = tm.cache.PublishCDREvent(ctx, evt)
+			}
 		}
 	case "PredictiveRoomBusy":
 		callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
@@ -299,18 +401,20 @@ func (tm *TrunkManager) handleAgentConnect(ctx context.Context, attrs map[string
 	callID := tm.channels.GetCallIDByAsterisk(channel, uniqueID)
 	activeChan := tm.channels.GetActiveChannelByAsterisk(channel, uniqueID)
 
-	agentID := member
-	if strings.Contains(agentID, "/") {
-		parts := strings.Split(agentID, "/")
-		agentID = parts[len(parts)-1]
-	}
-	if strings.Contains(agentID, "@") {
-		parts := strings.Split(agentID, "@")
-		agentID = parts[0]
-	}
+	agentID := cleanAgentID(member)
 
 	if callID != "" && agentID != "" {
 		tm.channels.AssignAgent(callID, agentID)
+		if tm.cache != nil {
+			evt := &domain.CDREvent{
+				CallID:      callID,
+				AgentID:     &agentID,
+				Disposition: domain.DispositionDelivered,
+				Type:        domain.CDREventAgentConnected,
+				Timestamp:   time.Now().Unix(),
+			}
+			_ = tm.cache.PublishCDREvent(ctx, evt)
+		}
 	}
 
 	campaignID := ""

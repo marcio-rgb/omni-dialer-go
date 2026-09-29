@@ -31,7 +31,7 @@ services:
       - LIVEKIT_URL=https://live.creditobr.org
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
-      - UPDATE_TIMESTAMP=1790419824
+      - UPDATE_TIMESTAMP=1790670732
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
@@ -60,13 +60,14 @@ services:
         - "traefik.http.routers.dialer-go.rule=Host(`dialer.creditobr.org`)"
         - "traefik.http.routers.dialer-go.entrypoints=websecure"
         - "traefik.http.routers.dialer-go.tls=true"
-        - "traefik.http.routers.dialer-go.tls.certresolver=letsencryptresolver"
-        - "traefik.http.middlewares.dialer-go-stripprefix.stripprefix.prefixes=/dialer"
-        - "traefik.http.routers.dialer-go.middlewares=dialer-go-stripprefix"
+        - "traefik.http.routers.dialer-go.tls.certresolver=myresolver"
+        - "traefik.http.routers.dialer-go.service=dialer-go"
         - "traefik.http.services.dialer-go.loadbalancer.server.port=8081"
       placement:
         constraints:
           - node.role == manager
+      update_config:
+        order: stop-first
       restart_policy:
         condition: on-failure
 
@@ -109,6 +110,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      update_config:
+        order: stop-first
       restart_policy:
         condition: on-failure
 
@@ -183,6 +186,10 @@ services:
         published: 5062
         protocol: tcp
         mode: host
+      - target: 3001
+        published: 3001
+        protocol: tcp
+        mode: host
       - "11100-12000:11100-12000/udp"
     volumes:
       - /opt/ominichat/config/sip.yaml:/sip/config.yaml:ro
@@ -199,6 +206,8 @@ services:
       placement:
         constraints:
           - node.role == manager
+      update_config:
+        order: stop-first
       restart_policy:
         condition: on-failure
 

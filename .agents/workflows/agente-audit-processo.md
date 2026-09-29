@@ -70,8 +70,9 @@ sequenceDiagram
     Engine-->>Handler: PredictiveDemandResponse (Status: "active", DialingChannels: N)
     Handler-->>Client: 200 OK
 
-    Note over AMI,Dialplan: Atendimento Telefônico
-    AMI->>Dialplan: Inicia MixMonitor() no ms 0 & Answer() & Vosk EAGI(alo_tudo_bem)
+    Note over AMI,Dialplan: Atendimento Telefônico & Triagem AudioSocket
+    Engine->>Cache: SetCallMetadata(call_uuid, metadata, 15m)
+    AMI->>Dialplan: Inicia MixMonitor(.tmp.wav) no ms 0 & Answer() & AudioSocket(call_uuid, 127.0.0.1:9092)
     alt Confirmação Humana Positiva ("Alô", "Oi", "Sim", "Pronto", "Quem fala")
         Dialplan->>AMI: UserEvent(PredictiveHuman)
         AMI->>TrunkMgr: Evento UserEvent
@@ -93,7 +94,8 @@ sequenceDiagram
         Dialplan->>AMI: UserEvent(PredictiveAi)
     end
 
-    Note over AMI,TrunkMgr: Término da Chamada
+    Note over AMI,TrunkMgr: Término da Chamada & Hook Hangup (exten => h)
+    Dialplan->>AMI: UserEvent(RecordingFinished, File: .tmp.wav)
     AMI->>TrunkMgr: Evento Hangup
     TrunkMgr->>Channels: ReleaseByAsterisk(channel, uniqueID)
     Channels->>Channels: ReleaseSlot(callID)

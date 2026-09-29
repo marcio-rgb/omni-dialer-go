@@ -134,9 +134,6 @@ func (s *SessionHandler) ProcessSession(ctx context.Context, audioReader io.Read
 				return verdict, nil
 			}
 		}
-
-		// Pequena pausa para sincronismo de chunk de 100ms se leitura rápida
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Janela esgotada sem Fast-Exit: invoca Finalize para tomada de decisão final

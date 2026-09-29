@@ -166,13 +166,48 @@ func AutoMigrateSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);`,
 
-		// 10. Garantia de colunas retrocompatíveis
+		// 10. Tabela de Cadastro Soberano de Agentes (public.tenants_agents)
+		`CREATE TABLE IF NOT EXISTS tenants_agents (
+			id BIGSERIAL PRIMARY KEY,
+			tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
+			agent_id VARCHAR(64) NOT NULL,
+			agent_name VARCHAR(128) NOT NULL,
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uq_tenants_agents_tenant_agent UNIQUE (tenant_id, agent_id)
+		);`,
+
+		// 11. Tabela de Histórico Temporal de Presença/Estados do Agente (public.tenant_agent_history)
+		`CREATE TABLE IF NOT EXISTS tenant_agent_history (
+			id BIGSERIAL PRIMARY KEY,
+			tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',
+			agent_id VARCHAR(64) NOT NULL,
+			campaign_id VARCHAR(64),
+			status VARCHAR(32) NOT NULL,
+			action VARCHAR(32) NOT NULL,
+			reason VARCHAR(128),
+			livekit_room VARCHAR(128),
+			call_id VARCHAR(64),
+			started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			ended_at TIMESTAMP WITH TIME ZONE,
+			duration_seconds INTEGER DEFAULT 0,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		);`,
+
+		// 12. Garantia de colunas retrocompatíveis
 		`ALTER TABLE leads ADD COLUMN IF NOT EXISTS work_word VARCHAR(64);`,
 		`ALTER TABLE leads ADD COLUMN IF NOT EXISTS work_words VARCHAR(64);`,
 		`ALTER TABLE leads ADD COLUMN IF NOT EXISTS custom JSONB DEFAULT '{}'::jsonb;`,
 		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS transcription TEXT;`,
 		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_file VARCHAR(512);`,
 		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS recording_url VARCHAR(512);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_id BIGINT;`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_name VARCHAR(255);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS lead_cpf VARCHAR(32);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS amd_status VARCHAR(32);`,
+		`ALTER TABLE cdrs ADD COLUMN IF NOT EXISTS amd_cause VARCHAR(64);`,
+		`ALTER TABLE trunks ADD COLUMN IF NOT EXISTS amd_enabled BOOLEAN NOT NULL DEFAULT FALSE;`,
 
 		// 11. Índices determinísticos de alta performance
 		`CREATE INDEX IF NOT EXISTS idx_leads_camp_status_id ON leads(campaign_id, status, id DESC);`,
@@ -180,9 +215,15 @@ func AutoMigrateSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_cdrs_tenant_created ON cdrs(tenant_id, created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_cdrs_camp ON cdrs(campaign_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_cdrs_phone ON cdrs(phone);`,
+		`CREATE INDEX IF NOT EXISTS idx_cdrs_lead_cpf ON cdrs(lead_cpf);`,
+		`CREATE INDEX IF NOT EXISTS idx_cdrs_lead_id ON cdrs(lead_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_trunks_tenant ON trunks(tenant_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_instances_tenant ON instances(tenant_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_instances_mode ON instances(mode);`,
+		`CREATE INDEX IF NOT EXISTS idx_tenants_agents_lookup ON tenants_agents(tenant_id, agent_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_hist_tenant_agent_started ON tenant_agent_history(tenant_id, agent_id, started_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_hist_tenant_status_started ON tenant_agent_history(tenant_id, status, started_at DESC);`,
+		`CREATE INDEX IF NOT EXISTS idx_agent_hist_agent_id ON tenant_agent_history(agent_id);`,
 	}
 
 	for _, stmt := range ddlStatements {

@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:bookworm AS builder
+FROM golang:1.25.0 AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -22,5 +22,6 @@ COPY models/ ./models/
 COPY mode/ ./mode/
 
 EXPOSE 8080
+EXPOSE 8081
 
 CMD ["./dialer-go"]
