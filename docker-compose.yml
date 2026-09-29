@@ -29,9 +29,9 @@ services:
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
       - LIVEKIT_URL=https://live.creditobr.org
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=secret
-      - UPDATE_TIMESTAMP=1790673041
+      - LIVEKIT_API_KEY=devkey12312312312
+      - LIVEKIT_API_SECRET=secret12312312312
+      - UPDATE_TIMESTAMP=1790674313
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro

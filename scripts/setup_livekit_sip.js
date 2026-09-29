@@ -16,8 +16,8 @@
 const crypto = require('crypto');
 
 const LIVEKIT_URL = (process.env.LIVEKIT_URL || 'https://live.creditobr.org').replace(/\/+$/, '');
-const API_KEY = process.env.LIVEKIT_API_KEY || 'devkey';
-const API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret';
+const API_KEY = process.env.LIVEKIT_API_KEY || 'devkey12312312312';
+const API_SECRET = process.env.LIVEKIT_API_SECRET || 'secret12312312312';
 
 function base64UrlEncode(str) {
   return Buffer.from(str)
