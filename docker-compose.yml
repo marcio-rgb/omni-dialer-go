@@ -10,28 +10,28 @@ services:
           - dialer-go
     environment:
       - PORT=8081
-      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@84.247.135.255:5896/dialer_db?sslmode=disable
-      - REDIS_ADDR=84.247.135.255:6379
+      - DATABASE_URL=postgresql://postgres:ojr6DNM25InIg3qoYI4nbUL5Cx04iCiCn1122@infra_postgres:5432/dialer_db?sslmode=disable
+      - REDIS_ADDR=infra_redis:6379
       - REDIS_DB=0
-      - ASTERISK_AMI_HOST=84.247.135.255
+      - ASTERISK_AMI_HOST=dialer_asterisk
       - ASTERISK_AMI_PORT=5038
       - ASTERISK_AMI_USER=Omnichat
       - ASTERISK_AMI_PASS=ypnqYP7EHNtYFkqww23243rwew423
-      - VOSK_SERVER_URL=ws://84.247.135.255:2700
+      - VOSK_SERVER_URL=ws://dialer_dialer-vosk:2700
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=creditobr
       - MINIO_SECRET_KEY=56DNM25InI73qoYI4nb9
       - MINIO_BUCKET=mailings
       - MINIO_USE_SSL=false
-      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,84.247.135.255,*
+      - INITIAL_WHITELIST_IPS=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,207.180.251.25,*
       - MAX_GLOBAL_CHANNELS=250
       - HUMAN_RESERVED_QUOTA=20
       - MIN_CHANNELS_PER_AGENT=2
       - RECORDINGS_BASE_URL=https://sip.creditobr.com.br:8081/api/v1/recordings
       - LIVEKIT_URL=https://live.creditobr.org
-      - LIVEKIT_API_KEY=devkey12312312312
-      - LIVEKIT_API_SECRET=secret12312312312
-      - UPDATE_TIMESTAMP=1790676450
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+      - UPDATE_TIMESTAMP=1790766891
     volumes:
       - /opt/ominichat/asterisk/conf:/etc/asterisk:rw
       - /opt/ominichat/asterisk/monitor:/var/spool/asterisk/monitor:ro
@@ -170,13 +170,12 @@ services:
       restart_policy:
         condition: on-failure
 
-  # --- LIVEKIT SIP GATEWAY (CO-LOCALIZADO COM ASTERISK NA PORTA 5062) ---
   livekit-sip:
     image: livekit/sip:latest
-    networks:
-      minha_rede:
-        aliases:
-          - livekit-sip
+    environment:
+      - SIP_CONFIG_FILE=/sip/config.yaml
+    volumes:
+      - /opt/ominichat/config/sip.yaml:/sip/config.yaml:ro
     ports:
       - target: 5062
         published: 5062
@@ -190,11 +189,10 @@ services:
         published: 3001
         protocol: tcp
         mode: host
-      - "11100-12000:11100-12000/udp"
-    volumes:
-      - /opt/ominichat/config/sip.yaml:/sip/config.yaml:ro
-    environment:
-      - SIP_CONFIG_FILE=/sip/config.yaml
+    networks:
+      minha_rede:
+        aliases:
+          - livekit-sip
     deploy:
       resources:
         limits:

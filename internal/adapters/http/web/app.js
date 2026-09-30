@@ -8,7 +8,7 @@ window.App = (function () {
 
   const state = {
     tenantId: 'default',
-    currentTab: 'tab-instances',
+    currentTab: 'tab-configs',
     currentConfigFile: 'pjsip.conf',
     trunks: []
   };
@@ -269,6 +269,7 @@ window.App = (function () {
     });
 
     initTabs();
+    fetchConfigFile(state.currentConfigFile);
 
     el.trunkSearch.oninput = renderTrunks;
     el.btnReloadTrunks.onclick = () => {

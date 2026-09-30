@@ -64,7 +64,12 @@
 
     <!-- Main Navigation Tabs (Máximo de 2 palavras) -->
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="tab-instances" id="tab-btn-instances">
+      <button class="tab-btn active" data-tab="tab-configs" id="tab-btn-configs">
+        <i class="pi pi-file-edit"></i>
+        <span>Arquivos</span>
+      </button>
+
+      <button class="tab-btn" data-tab="tab-instances" id="tab-btn-instances">
         <i class="pi pi-server"></i>
         <span>Instâncias</span>
       </button>
@@ -72,11 +77,6 @@
       <button class="tab-btn" data-tab="tab-trunks" id="tab-btn-trunks">
         <i class="pi pi-sliders-h"></i>
         <span>Troncos</span>
-      </button>
-
-      <button class="tab-btn" data-tab="tab-configs" id="tab-btn-configs">
-        <i class="pi pi-file-edit"></i>
-        <span>Arquivos</span>
       </button>
 
       <button class="tab-btn" data-tab="tab-telemetry" id="tab-btn-telemetry">
@@ -88,7 +88,7 @@
     <!-- Main Content Area -->
     <main class="main-content">
       <!-- TAB 1: INSTÂNCIAS (DIALER & DISPATCHER) -->
-      <section id="tab-instances" class="tab-content active">
+      <section id="tab-instances" class="tab-content">
         <!-- Summary Cards -->
         <div class="stats-grid">
           <div class="stat-card">
@@ -199,12 +199,15 @@
       </section>
 
       <!-- TAB 3: CONFIGS -->
-      <section id="tab-configs" class="tab-content">
+      <section id="tab-configs" class="tab-content active">
         <div class="editor-layout">
           <div class="editor-header">
             <div class="file-tabs" id="config-file-tabs">
               <button class="file-tab active" data-file="pjsip.conf">pjsip.conf</button>
               <button class="file-tab" data-file="extensions.conf">extensions.conf</button>
+              <button class="file-tab" data-file="queues.conf">queues.conf</button>
+              <button class="file-tab" data-file="queuerules.conf">queuerules.conf</button>
+              <button class="file-tab" data-file="musiconhold.conf">musiconhold.conf</button>
               <button class="file-tab" data-file="amd.conf">amd.conf</button>
             </div>
             <div style="display: flex; gap: 0.5rem;">

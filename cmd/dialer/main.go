@@ -133,14 +133,12 @@ func main() {
 		manualEngine.SetTenantRepository(tenantRepo)
 		manualEngine.SetWebhookClient(webhookAdapter)
 
-		// 7.1. Inicializa Workers em Background para Redis Streams (CDR Persister e Faster-Whisper)
+		channelMgr.StartJanitor(ctx, 5*time.Second, 120*time.Second)
+
+		// 7.1. Inicializa Worker em Background para Redis Streams (CDR Persister Assíncrono)
 		cdrPersister := core.NewCDRPersisterWorker(cache, reportRepo)
 		cdrPersister.StartDaemon(ctx)
 		defer cdrPersister.Stop()
-
-		whisperWorker := core.NewWhisperTranscriptionWorker(cache, reportRepo, "")
-		whisperWorker.StartDaemon(ctx)
-		defer whisperWorker.Stop()
 
 		mailingProcessor := core.NewMailingProcessor(storageAdapter, leadRepo, cache)
 		saturationService := core.NewSaturationService(leadRepo, campaignRepo)

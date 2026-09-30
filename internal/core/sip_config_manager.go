@@ -122,6 +122,7 @@ func (m *SIPConfigManager) ApplyConfigs(ctx context.Context, filenames []string,
 	hasPJSIP := false
 	hasDialplan := false
 	hasAMD := false
+	hasQueues := false
 	hasGeneral := false
 
 	// 1. Grava os arquivos fisicamente no disco
@@ -156,6 +157,8 @@ func (m *SIPConfigManager) ApplyConfigs(ctx context.Context, filenames []string,
 			hasDialplan = true
 		} else if strings.Contains(lowerName, "amd") {
 			hasAMD = true
+		} else if strings.Contains(lowerName, "queue") {
+			hasQueues = true
 		} else {
 			hasGeneral = true
 		}
@@ -193,7 +196,17 @@ func (m *SIPConfigManager) ApplyConfigs(ctx context.Context, filenames []string,
 			}
 		}
 
-		if hasGeneral && !hasPJSIP && !hasDialplan && !hasAMD {
+		if hasQueues {
+			actionID := fmt.Sprintf("reload-queue-%d", time.Now().UnixNano())
+			out, err := ami.Command(ctx, actionID, "module reload app_queue.so")
+			if err != nil {
+				reloadResults = append(reloadResults, fmt.Sprintf("queue reload ERRO: %v", err))
+			} else {
+				reloadResults = append(reloadResults, fmt.Sprintf("queue reload SUCESSO: %s", strings.TrimSpace(out)))
+			}
+		}
+
+		if hasGeneral && !hasPJSIP && !hasDialplan && !hasAMD && !hasQueues {
 			actionID := fmt.Sprintf("reload-core-%d", time.Now().UnixNano())
 			out, err := ami.Command(ctx, actionID, "module reload")
 			if err != nil {
@@ -223,7 +236,7 @@ func (m *SIPConfigManager) SeedFromDiskIfEmpty(ctx context.Context) {
 	}
 
 	log.Println("[SIP-CONFIG] Tabela sip_data vazia. Inicializando seeding a partir dos arquivos locais de configuracao...")
-	defaultFiles := []string{"pjsip.conf", "extensions.conf", "amd.conf"}
+	defaultFiles := []string{"pjsip.conf", "extensions.conf", "queues.conf", "queuerules.conf", "amd.conf", "musiconhold.conf"}
 
 	for _, filename := range defaultFiles {
 		// Procura no diretório de seed configurado, modo dialer/dispatcher, diretório Asterisk ou local

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +77,7 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 	tm.mu.RLock()
 	repRepo := tm.reportRepo
 	routRepo := tm.routing
+	notifier := tm.notifier
 	tm.mu.RUnlock()
 
 	causeStr := attrs["Cause"]
@@ -143,13 +143,6 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 
 	recURL := ""
 	recFile := activeChan.RecordingFile
-	if recFile == "" && uniqueID != "" {
-		nowStr := activeChan.StartedAt.Format("2006/01/02")
-		pattern := fmt.Sprintf("/var/spool/asterisk/monitor/%s/*-%s.wav", nowStr, uniqueID)
-		if matches, _ := filepath.Glob(pattern); len(matches) > 0 {
-			recFile = matches[0]
-		}
-	}
 
 	if recFile != "" {
 		rel := strings.TrimPrefix(recFile, "/var/spool/asterisk/monitor/")
@@ -242,38 +235,26 @@ func (tm *TrunkManager) handleHangup(ctx context.Context, attrs map[string]strin
 			EndedAt:         &now,
 		}
 		_ = tm.cache.PublishCDREvent(ctx, hangupEvt)
-
-		// Se a chamada teve áudio gravado e duração relevante (>= 5s), enfileira transcrição assíncrona
-		if recFilePtr != nil && *recFilePtr != "" && billsec >= 5 {
-			job := &domain.TranscriptionJob{
-				CallID:        cdrID,
-				TenantID:      activeChan.TenantID,
-				RecordingFile: *recFilePtr,
-				Duration:      billsec,
-				Language:      "pt",
-			}
-			_ = tm.cache.EnqueueTranscriptionJob(ctx, job)
-		}
 	}
 
 	if routRepo != nil && (activeChan.CallType == domain.CallTypePredictive || activeChan.CallType == domain.CallTypeManual) {
-		_ = routRepo.SaveRouting(ctx, &domain.PhoneTrunkMapping{
-			Phone:        activeChan.Phone,
-			LastTrunk:    activeChan.TrunkID,
-			LastProject:  activeChan.TenantID,
-			LastSIPRoute: "",
-			TenantID:     activeChan.TenantID,
-			UpdatedAt:    time.Now(),
-		})
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = routRepo.SaveRouting(bgCtx, &domain.PhoneTrunkMapping{
+				Phone:        activeChan.Phone,
+				LastTrunk:    activeChan.TrunkID,
+				LastProject:  activeChan.TenantID,
+				LastSIPRoute: "",
+				TenantID:     activeChan.TenantID,
+				UpdatedAt:    time.Now(),
+			})
+		}()
 	}
-
-	tm.mu.RLock()
-	notifier := tm.notifier
-	tm.mu.RUnlock()
 
 	if notifier != nil {
 		if activeChan.CallType == domain.CallTypeManual || activeChan.IsAnswered || recURL != "" {
-			notifier.DispatchCallEnded(activeChan, disposition, causeInt, duration, billsec, ringSeconds, recURL)
+			go notifier.DispatchCallEnded(activeChan, disposition, causeInt, duration, billsec, ringSeconds, recURL)
 		}
 	}
 }

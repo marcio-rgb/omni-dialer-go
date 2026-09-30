@@ -437,4 +437,46 @@ func (cm *ChannelManager) GetAsteriskChannelByCallID(callID string) string {
 	return ""
 }
 
+// ClearExpiredChannels limpa canais que excederam o tempo máximo de vida sem atualização.
+func (cm *ChannelManager) ClearExpiredChannels(maxAge time.Duration) int {
+	now := time.Now()
+	var toRelease []string
+
+	cm.chanMu.RLock()
+	for id, ch := range cm.activeChannels {
+		if ch != nil && now.Sub(ch.StartedAt) > maxAge {
+			toRelease = append(toRelease, id)
+		}
+	}
+	cm.chanMu.RUnlock()
+
+	cleaned := 0
+	ctx := context.Background()
+	for _, id := range toRelease {
+		if ch := cm.ReleaseSlot(ctx, id); ch != nil {
+			cleaned++
+		}
+	}
+	if cleaned > 0 {
+		cm.ReconcileCounters(ctx)
+	}
+	return cleaned
+}
+
+// StartJanitor inicia a rotina periódica e leve de limpeza de canais órfãos/expirados.
+func (cm *ChannelManager) StartJanitor(ctx context.Context, interval, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cm.ClearExpiredChannels(maxAge)
+			}
+		}
+	}()
+}
+
 

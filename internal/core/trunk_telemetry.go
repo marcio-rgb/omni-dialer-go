@@ -37,7 +37,7 @@ func (tm *TrunkManager) PollAsteriskEndpoints(ctx context.Context) {
 						continue
 					}
 					status := "OFFLINE"
-					if strings.Contains(line, "Not in use") || strings.Contains(line, "In use") {
+					if strings.Contains(line, "Not in use") || strings.Contains(line, "In use") || strings.Contains(line, "Inuse") || strings.Contains(line, "Busy") || strings.Contains(line, "Ringing") {
 						status = "ONLINE"
 					} else if strings.Contains(line, "Unavailable") {
 						status = "UNREACHABLE"
@@ -56,13 +56,16 @@ func (tm *TrunkManager) PollAsteriskEndpoints(ctx context.Context) {
 					}
 					_ = tm.cache.SetTrunkHealth(ctx, trunkID, health, 24*time.Hour)
 				}
-			} else if strings.Contains(line, "Contact:") && strings.Contains(line, "Avail") {
+			} else if strings.Contains(line, "Contact:") && (strings.Contains(line, "Avail") || strings.Contains(line, "NonQual")) {
 				parts := strings.Fields(trimmed)
-				if len(parts) >= 5 {
+				if len(parts) >= 4 {
 					trunkID := cleanTrunkID(parts[1])
 					if trunkID != "" {
-						rttStr := parts[len(parts)-1]
-						rtt, _ := strconv.ParseFloat(rttStr, 64)
+						rtt := 0.0
+						if strings.Contains(line, "Avail") {
+							rttStr := parts[len(parts)-1]
+							rtt, _ = strconv.ParseFloat(rttStr, 64)
+						}
 						existing, _ := tm.cache.GetTrunkHealth(ctx, trunkID)
 						status := "ONLINE"
 						if existing != nil && existing.Status == "REGISTERED" {
